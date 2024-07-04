@@ -18,13 +18,14 @@ class FolderCopyApp(QWidget):
         layout = QVBoxLayout()
         h_layout1 = QHBoxLayout()
         h_layout2 = QHBoxLayout()
+        h_layout2_1 = QHBoxLayout()
         h_layout3 = QHBoxLayout()
 
         # Create widgets for the first row
         self.input_box1 = QLineEdit(self)
-        self.folder_button1 = QPushButton('Choose Folder', self)
+        self.folder_button1 = QPushButton('Set Source', self)
         self.folder_button1.clicked.connect(self.choose_folder1)
-        self.open_folder_button1 = QPushButton('Open Folder', self)
+        self.open_folder_button1 = QPushButton('Open', self)
         self.open_folder_button1.clicked.connect(self.open_folder1)
 
         # Add widgets to the first row layout
@@ -34,12 +35,21 @@ class FolderCopyApp(QWidget):
 
         # Create widgets for the second row
         self.input_box2 = QLineEdit(self)
-        self.folder_button2 = QPushButton('Choose Folder', self)
+        self.folder_button2 = QPushButton('Client Dir', self)
         self.folder_button2.clicked.connect(self.choose_folder2)
 
         # Add widgets to the second row layout
         h_layout2.addWidget(self.input_box2)
         h_layout2.addWidget(self.folder_button2)
+
+        # Create widgets for the second row
+        self.input_box2_1 = QLineEdit(self)
+        self.folder_button2_1 = QPushButton('Server Dir', self)
+        self.folder_button2_1.clicked.connect(self.choose_folder2)
+
+        # Add widgets to the second row layout
+        h_layout2_1.addWidget(self.input_box2_1)
+        h_layout2_1.addWidget(self.folder_button2_1)
 
         # Create widgets for the third row
         self.combo_box = QComboBox(self)
@@ -50,16 +60,20 @@ class FolderCopyApp(QWidget):
         self.copy_button.clicked.connect(self.copy_folder)
         self.copy_button1 = QPushButton('Copy Server', self)
         self.copy_button1.clicked.connect(self.copy_folder)
+        self.copy_button2 = QPushButton('Copy Both', self)
+        #self.copy_button1.clicked.connect(self.copy_folder)
 
         # Add widgets to the third row layout
         h_layout3.addWidget(self.combo_box)
         h_layout3.addWidget(self.refresh_button)
         h_layout3.addWidget(self.copy_button)
         h_layout3.addWidget(self.copy_button1)
+        h_layout3.addWidget(self.copy_button2)
 
         # Add row layouts to the main layout
         layout.addLayout(h_layout1)
         layout.addLayout(h_layout2)
+        layout.addLayout(h_layout2_1)
         layout.addLayout(h_layout3)
 
         # Set the main layout
@@ -67,7 +81,7 @@ class FolderCopyApp(QWidget):
 
         # Set the window properties
         self.setWindowTitle('Folder Copy App')
-        self.setGeometry(300, 300, 800, 200)
+        self.setGeometry(300, 300, 650, 100)
         self.show()
 
     def choose_folder1(self):
