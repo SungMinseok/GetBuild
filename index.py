@@ -57,9 +57,9 @@ class FolderCopyApp(QWidget):
         self.refresh_button.setMaximumSize(35,500)
         self.refresh_button.clicked.connect(self.refresh_dropdown)
         self.copy_button = QPushButton('Copy Client', self)
-        self.copy_button.clicked.connect(self.copy_folder)
+        self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),'WindowsClient'))
         self.copy_button1 = QPushButton('Copy Server', self)
-        self.copy_button1.clicked.connect(self.copy_folder)
+        self.copy_button1.clicked.connect(lambda : self.copy_folder(self.input_box2_1.text(),'WindowsServer'))
         self.copy_button2 = QPushButton('Copy Both', self)
         #self.copy_button1.clicked.connect(self.copy_folder)
 
@@ -103,11 +103,15 @@ class FolderCopyApp(QWidget):
             folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
             self.combo_box.addItems(folders)
 
-    def copy_folder(self):
+    def copy_folder(self, dest_folder, target_name):
+        '''
+        dest_folder = 'C:/mybuild'
+        target_name = 'WindowsClient'
+        '''
         src_folder = self.input_box1.text()
-        dest_folder = self.input_box2.text()
+        #dest_folder = self.input_box2.text()
         clinet_folder = self.combo_box.currentText()
-        folder_to_copy = os.path.join(src_folder, clinet_folder, 'WindowsClient')
+        folder_to_copy = os.path.join(src_folder, clinet_folder, target_name)
 
         if not os.path.isdir(src_folder):
             QMessageBox.critical(self, 'Error', 'Source path is not a valid directory.')
@@ -120,8 +124,8 @@ class FolderCopyApp(QWidget):
             return
 
         try:
-            dest_path = os.path.join(dest_folder, clinet_folder, 'WindowsClient')
-            self.progress_dialog = QProgressDialog("Copying files...", "Cancel", 0, 100, self)
+            dest_path = os.path.join(dest_folder, clinet_folder, target_name)
+            self.progress_dialog = QProgressDialog(f"Copying {target_name} files...", "Cancel", 0, 100, self)
             self.progress_dialog.setWindowModality(Qt.WindowModal)
             self.progress_dialog.setValue(0)
 
