@@ -153,9 +153,9 @@ class FolderCopyApp(QWidget):
 
     def open_folder1(self):
         folder_path = self.input_box1.text()
-        if os.path.isdir(folder_path):
+        try:
             os.startfile(folder_path)
-        else:
+        except:
             QMessageBox.critical(self, 'Error', 'Invalid directory.')
 
     def load_settings(self):
