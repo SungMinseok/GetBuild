@@ -24,7 +24,7 @@ class FolderCopyApp(QWidget):
         # Create widgets for the first row
         self.input_box1 = QLineEdit(self)
         self.folder_button1 = QPushButton('Set Source', self)
-        self.folder_button1.clicked.connect(self.choose_folder1)
+        self.folder_button1.clicked.connect(lambda: self.choose_folder(self.input_box1))
         self.open_folder_button1 = QPushButton('Open', self)
         self.open_folder_button1.clicked.connect(self.open_folder1)
 
@@ -36,7 +36,7 @@ class FolderCopyApp(QWidget):
         # Create widgets for the second row
         self.input_box2 = QLineEdit(self)
         self.folder_button2 = QPushButton('Client Dir', self)
-        self.folder_button2.clicked.connect(self.choose_folder2)
+        self.folder_button2.clicked.connect(lambda: self.choose_folder(self.input_box2))
 
         # Add widgets to the second row layout
         h_layout2.addWidget(self.input_box2)
@@ -45,7 +45,7 @@ class FolderCopyApp(QWidget):
         # Create widgets for the second row
         self.input_box2_1 = QLineEdit(self)
         self.folder_button2_1 = QPushButton('Server Dir', self)
-        self.folder_button2_1.clicked.connect(self.choose_folder2)
+        self.folder_button2_1.clicked.connect(lambda: self.choose_folder(self.input_box2_1))
 
         # Add widgets to the second row layout
         h_layout2_1.addWidget(self.input_box2_1)
@@ -84,18 +84,18 @@ class FolderCopyApp(QWidget):
         self.setGeometry(300, 300, 650, 100)
         self.show()
 
-    def choose_folder1(self):
+    def choose_folder(self, return_input_box):
         folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder')
         if folder_path:
-            self.input_box1.setText(folder_path)
-            self.refresh_dropdown()
+            return_input_box.setText(folder_path)
+            #self.refresh_dropdown()
 
     def choose_folder2(self):
         folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder')
         if folder_path:
             self.input_box2.setText(folder_path)
 
-    def refresh_dropdown(self):
+    def refresh_dropdown(self, ):
         self.combo_box.clear()
         folder_path = self.input_box1.text()
         if os.path.isdir(folder_path):
