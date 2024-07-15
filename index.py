@@ -5,6 +5,7 @@ import json
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox)
 from PyQt5.QtCore import Qt, QTime, QTimer
+import zipfile
 
 class FolderCopyApp(QWidget):
     def __init__(self):
@@ -174,6 +175,50 @@ class FolderCopyApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to copy folder: {str(e)}')
 
+    def zip_folder(self, dest_folder,target_folder, target_name):
+        src_folder = self.input_box1.text()
+        src_folder = 'c:/source'
+        #client_folder = self.combo_box.currentText()
+        folder_to_zip = os.path.join(src_folder, target_folder, target_name)
+
+        if not os.path.isdir(src_folder):
+            QMessageBox.critical(self, 'Error', 'Source path is not a valid directory.')
+            return
+        if not os.path.isdir(dest_folder):
+            QMessageBox.critical(self, 'Error', 'Destination path is not a valid directory.')
+            return
+        if not os.path.isdir(folder_to_zip):
+            QMessageBox.critical(self, 'Error', f'{folder_to_zip} does not exist.')
+            return
+
+        try:
+            dest_path = os.path.join(dest_folder, target_folder)
+            zip_file = os.path.join(dest_path, f"{target_name}.zip")
+
+            self.progress_dialog = QProgressDialog(f"Zipping {target_name} files...", "Cancel", 0, 100, self)
+            self.progress_dialog.setWindowModality(Qt.WindowModal)
+            self.progress_dialog.setValue(0)
+
+            with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(folder_to_zip):
+                    for file in files:
+                        if self.progress_dialog.wasCanceled():
+                            QMessageBox.information(self, 'Cancelled', 'Zipping cancelled.')
+                            return
+
+                        src_file = os.path.join(root, file)
+                        rel_path = os.path.relpath(root, folder_to_zip)
+                        zipf.write(src_file, os.path.join(rel_path, file))
+
+                        # Update progress
+                        progress = (files.index(file) + 1) / len(files) * 100
+                        self.progress_dialog.setValue(int(progress))
+
+            self.progress_dialog.setValue(100)
+            QMessageBox.information(self, 'Success', 'Folder zipped successfully.')
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
+
     def open_folder1(self):
         folder_path = self.input_box1.text()
         try:
@@ -191,6 +236,7 @@ class FolderCopyApp(QWidget):
 
     def test_timer(self):
         QMessageBox.information(self, 'Test', 'Timer executed.')
+        self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
 
     def load_settings(self):
         if os.path.exists(self.settings_file):
