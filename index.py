@@ -80,7 +80,7 @@ class FolderCopyApp(QWidget):
         self.setLayout(layout)
 
         # Set the window properties
-        self.setWindowTitle('Folder Copy App')
+        self.setWindowTitle('Get Build')
         self.setGeometry(300, 300, 650, 100)
         self.show()
 
@@ -164,12 +164,14 @@ class FolderCopyApp(QWidget):
                 settings = json.load(file)
                 self.input_box1.setText(settings.get('input_box1', ''))
                 self.input_box2.setText(settings.get('input_box2', ''))
+                self.input_box2_1.setText(settings.get('input_box2_1', ''))
                 self.combo_box.addItems(settings.get('combo_box', []))
 
     def save_settings(self):
         settings = {
             'input_box1': self.input_box1.text(),
             'input_box2': self.input_box2.text(),
+            'input_box2_1': self.input_box2_1.text(),
             'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
         }
         with open(self.settings_file, 'w') as file:
