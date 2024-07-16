@@ -235,7 +235,7 @@ class FolderCopyApp(QWidget):
                 self.checkbox.setChecked(False)
 
     def test_timer(self):
-        QMessageBox.information(self, 'Test', 'Timer executed.')
+        #QMessageBox.information(self, 'Test', 'Timer executed.')
         #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         self.refresh_dropdown()
