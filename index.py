@@ -177,8 +177,8 @@ class FolderCopyApp(QWidget):
 
     def zip_folder(self, dest_folder,target_folder, target_name):
         src_folder = self.input_box1.text()
-        src_folder = 'c:/source'
-        #client_folder = self.combo_box.currentText()
+        #src_folder = 'c:/source'
+        client_folder = self.combo_box.currentText()
         folder_to_zip = os.path.join(src_folder, target_folder, target_name)
 
         if not os.path.isdir(src_folder):
@@ -236,8 +236,11 @@ class FolderCopyApp(QWidget):
 
     def test_timer(self):
         QMessageBox.information(self, 'Test', 'Timer executed.')
-        self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
-
+        #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
+        #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
+        self.refresh_dropdown()
+        self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
+        #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
         if os.path.exists(self.settings_file):
             with open(self.settings_file, 'r') as file:
