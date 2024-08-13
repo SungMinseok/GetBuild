@@ -77,6 +77,8 @@ class FolderCopyApp(QWidget):
         self.time_edit = QTimeEdit(self)
         self.time_edit.setDisplayFormat("HH:mm")
         self.input_box4 = QLineEdit(self)
+        self.combo_box1 = QComboBox(self)
+        self.combo_box1.addItems(['Only Client','Only Server','All'])
         self.checkbox = QCheckBox('Reservation', self)
 
 
@@ -84,6 +86,7 @@ class FolderCopyApp(QWidget):
         # Add widgets to the main layout
         h_layout4.addWidget(self.time_edit)
         h_layout4.addWidget(self.input_box4)
+        h_layout4.addWidget(self.combo_box1)
         h_layout4.addWidget(self.checkbox)
 
         # Add row layouts to the main layout
@@ -119,18 +122,24 @@ class FolderCopyApp(QWidget):
         if folder_path:
             self.input_box2.setText(folder_path)
 
-    def refresh_dropdown(self, ):
+    def refresh_dropdown(self):
         self.combo_box.clear()
         folder_path = self.input_box1.text()
+        filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+
         if os.path.isdir(folder_path):
             folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
             folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
-            self.combo_box.addItems(folders)
+
+            for folder in folders:
+                if any(filter_text in folder for filter_text in filter_texts):
+                    self.combo_box.addItem(folder)
 
     def copy_folder(self, dest_folder, target_folder, target_name):
         '''
-        dest_folder = 'C:/mybuild'
-        target_name = 'WindowsClient'
+        dest_folder:저장할 위치 'C:/mybuild'\n
+        target_folder:저장할 빌드명 'self.combo_box.currentText()'\n
+        target_name:저장할 폴더명 'WindowsClient'
         '''
         src_folder = self.input_box1.text()
         #dest_folder = self.input_box2.text()
@@ -235,11 +244,17 @@ class FolderCopyApp(QWidget):
                 self.checkbox.setChecked(False)
 
     def test_timer(self):
+        reservation_option = self.combo_box1.currentText() #Only Client, Only Server, All
         #QMessageBox.information(self, 'Test', 'Timer executed.')
         #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         self.refresh_dropdown()
-        self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
+        if reservation_option == "Only Client":
+            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+        elif reservation_option == "Only Server":
+            self.copy_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
+        elif reservation_option == "All":
+            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
         if os.path.exists(self.settings_file):
