@@ -3,8 +3,9 @@ import os
 import shutil
 import json
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox)
-from PyQt5.QtCore import Qt, QTime, QTimer
+                             QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox, QLabel, QMenuBar, QAction, QDialog)
+from PyQt5.QtCore import (Qt, QTime, QTimer, QUrl)
+from PyQt5.QtGui import QPixmap, QDesktopServices
 import zipfile
 
 class FolderCopyApp(QWidget):
@@ -15,101 +16,180 @@ class FolderCopyApp(QWidget):
         self.load_settings()
 
     def initUI(self):
-        # Create layouts
+        # Apply the custom stylesheet
+        self.setStyleSheet("""
+    QWidget {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        border-radius: 10px;
+        border: 1px solid #333333;
+        font-family: 'Malgun Gothic', sans-serif;
+        font-size: 11pt;
+        font-weight: bold
+    }
+
+    QLineEdit {
+        background-color: #333333;
+        border: 1px solid #555555;
+        padding: 5px;
+        border-radius: 5px;
+        font-family: 'Malgun Gothic', sans-serif;
+    }
+
+    QPushButton {
+        background-color: #444444;
+        border: 1px solid #666666;
+        border-radius: 5px;
+        padding: 5px;
+        font-family: 'Malgun Gothic', sans-serif;
+    }
+
+    QPushButton:hover {
+        background-color: #555555;
+    }
+
+    QPushButton:pressed {
+        background-color: #666666;
+    }
+
+    QComboBox {
+        background-color: #333333;
+        border: 1px solid #555555;
+        padding: 5px;
+        border-radius: 5px;
+        font-family: 'Malgun Gothic', sans-serif;
+    }
+
+    QCheckBox {
+        background-color: transparent;
+        border: none;
+        font-family: 'Malgun Gothic', sans-serif;
+    }
+
+    QProgressDialog {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        border-radius: 10px;
+        border: 1px solid #333333;
+        font-family: 'Malgun Gothic', sans-serif;
+    }
+
+    QTimeEdit {
+        background-color: #333333;
+        border: 1px solid #555555;
+        padding: 5px;
+        border-radius: 5px;
+        font-family: 'Malgun Gothic', sans-serif;
+    }
+""")
+
+        # Create a menu bar
+        menu_bar = QMenuBar(self)
+        about_menu = menu_bar.addMenu("Menu")
+        about_action = QAction("About", self)
+        about_action1 = QAction("About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        about_menu.addActions([about_action])
+
         layout = QVBoxLayout()
+        layout.setMenuBar(menu_bar)
+        # The rest of your UI initialization code remains the same
+        #layout = QVBoxLayout()
         h_layout1 = QHBoxLayout()
         h_layout2 = QHBoxLayout()
         h_layout2_1 = QHBoxLayout()
         h_layout3 = QHBoxLayout()
         h_layout4 = QHBoxLayout()
 
-        # Create widgets for the first row
+        # First row
         self.input_box1 = QLineEdit(self)
-        self.folder_button1 = QPushButton('Set Source', self)
+        self.folder_button1 = QPushButton('SET SOURCE', self)
+        #self.folder_button1.setFixedWidth(120)
+        self.folder_button1.setFixedWidth(186)
         self.folder_button1.clicked.connect(lambda: self.choose_folder(self.input_box1))
-        self.open_folder_button1 = QPushButton('Open', self)
-        self.open_folder_button1.clicked.connect(self.open_folder1)
-
-        # Add widgets to the first row layout
+        # self.open_folder_button1 = QPushButton('OPEN', self)        
+        # self.open_folder_button1.setFixedWidth(60)
+        # self.open_folder_button1.clicked.connect(self.open_folder1)
         h_layout1.addWidget(self.input_box1)
         h_layout1.addWidget(self.folder_button1)
-        h_layout1.addWidget(self.open_folder_button1)
+        #h_layout1.addWidget(self.open_folder_button1)
 
-        # Create widgets for the second row
+        # Second row
         self.input_box2 = QLineEdit(self)
-        self.folder_button2 = QPushButton('Client Dir', self)
+        self.folder_button2 = QPushButton('SET CLIENT DIRECTORY', self)        
+        self.folder_button2.setFixedWidth(186)
         self.folder_button2.clicked.connect(lambda: self.choose_folder(self.input_box2))
-
-        # Add widgets to the second row layout
         h_layout2.addWidget(self.input_box2)
         h_layout2.addWidget(self.folder_button2)
 
-        # Create widgets for the second row
+        # Additional second row
         self.input_box2_1 = QLineEdit(self)
-        self.folder_button2_1 = QPushButton('Server Dir', self)
+        self.folder_button2_1 = QPushButton('SET SERVER DIRECTORY', self)
+        self.folder_button2_1.setFixedWidth(186)
         self.folder_button2_1.clicked.connect(lambda: self.choose_folder(self.input_box2_1))
-
-        # Add widgets to the second row layout
         h_layout2_1.addWidget(self.input_box2_1)
         h_layout2_1.addWidget(self.folder_button2_1)
 
-        # Create widgets for the third row
+        # Third row
         self.combo_box = QComboBox(self)
         self.refresh_button = QPushButton('↺', self)
-        self.refresh_button.setMaximumSize(35,500)
+        self.refresh_button.setFixedWidth(35)
         self.refresh_button.clicked.connect(self.refresh_dropdown)
-        self.copy_button = QPushButton('Copy Client', self)
-        self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient'))
-        self.copy_button1 = QPushButton('Copy Server', self)
-        self.copy_button1.clicked.connect(lambda : self.copy_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer'))
-        self.copy_button2 = QPushButton('Copy All', self)
-        self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
-        #self.copy_button1.clicked.connect(self.copy_folder)
-
-        # Add widgets to the third row layout
+        
+        self.combo_box2 = QComboBox(self)
+        self.combo_box2.addItems(['Only Client','Only Server','All'])
+        self.combo_box2.setFixedWidth(120)
+        self.copy_button = QPushButton('COPY', self)
+        self.copy_button.clicked.connect(self.execute_copy)
+        self.copy_button.setFixedWidth(60)
+        # self.copy_button = QPushButton('COPY CLIENT', self)
+        # self.copy_button.setFixedWidth(120)
+        # self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient'))
+        # self.copy_button1 = QPushButton('COPY SERVER', self)
+        # self.copy_button1.setFixedWidth(120)
+        # self.copy_button1.clicked.connect(lambda : self.copy_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer'))
+        # self.copy_button2 = QPushButton('COPY ALL', self)
+        # self.copy_button2.setFixedWidth(120)
+        # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
         h_layout3.addWidget(self.combo_box)
         h_layout3.addWidget(self.refresh_button)
+        h_layout3.addWidget(self.combo_box2)
         h_layout3.addWidget(self.copy_button)
-        h_layout3.addWidget(self.copy_button1)
-        h_layout3.addWidget(self.copy_button2)
+        # h_layout3.addWidget(self.copy_button1)
+        # h_layout3.addWidget(self.copy_button2)
 
-        # Create widgets for the time setting
+        # Time settings
         self.time_edit = QTimeEdit(self)
         self.time_edit.setDisplayFormat("HH:mm")
         self.input_box4 = QLineEdit(self)
-        self.combo_box1 = QComboBox(self)
-        self.combo_box1.addItems(['Only Client','Only Server','All'])
-        self.checkbox = QCheckBox('Reservation', self)
-
-
-
-        # Add widgets to the main layout
+        # self.combo_box1 = QComboBox(self)
+        # self.combo_box1.addItems(['Only Client','Only Server','All'])
+        # self.combo_box1.setFixedWidth(120)
+        self.checkbox = QCheckBox('RESERVATION', self)
         h_layout4.addWidget(self.time_edit)
         h_layout4.addWidget(self.input_box4)
-        h_layout4.addWidget(self.combo_box1)
+        #h_layout4.addWidget(self.combo_box1)
         h_layout4.addWidget(self.checkbox)
 
-        # Add row layouts to the main layout
+        # Set the layout
         layout.addLayout(h_layout1)
         layout.addLayout(h_layout2)
         layout.addLayout(h_layout2_1)
         layout.addLayout(h_layout3)
         layout.addLayout(h_layout4)
-
-        # Set the main layout
         self.setLayout(layout)
 
 
-        # Set the window properties
-        self.setWindowTitle('Get Build')
+
+        self.setWindowTitle('BUILD ttalkkag2')
         self.setGeometry(300, 300, 650, 100)
         self.show()
 
-
-        # Set up a timer to check every minute
         self.check_timer = QTimer(self)
         self.check_timer.timeout.connect(self.check_time)
-        self.check_timer.start(1000)  # 60,000 milliseconds = 1 minute
+        self.check_timer.start(1000)
+
+
 
     def choose_folder(self, return_input_box):
         folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder')
@@ -240,15 +320,16 @@ class FolderCopyApp(QWidget):
             current_time = QTime.currentTime()
             set_time = self.time_edit.time()
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
-                self.test_timer()
+                self.execute_copy(refresh=True)
                 self.checkbox.setChecked(False)
 
-    def test_timer(self):
-        reservation_option = self.combo_box1.currentText() #Only Client, Only Server, All
+    def execute_copy(self, refresh = False):
+        reservation_option = self.combo_box2.currentText() #Only Client, Only Server, All
         #QMessageBox.information(self, 'Test', 'Timer executed.')
         #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
-        self.refresh_dropdown()
+        if refresh :
+            self.refresh_dropdown()
         if reservation_option == "Only Client":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
         elif reservation_option == "Only Server":
@@ -280,6 +361,45 @@ class FolderCopyApp(QWidget):
         }
         with open(self.settings_file, 'w') as file:
             json.dump(settings, file)
+
+    def show_about_dialog(self):
+        about_dialog = QDialog(self)
+        about_dialog.setWindowTitle("About")
+        about_dialog.setStyleSheet("""
+            QWidget {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                font-family: 'NanumSquareEB', sans-serif;
+                font-size: 12pt;
+            }
+        """)
+
+        layout = QVBoxLayout()
+
+        version_label = QLabel("Version: v1.0", about_dialog)
+        last_update_label = QLabel("Last update date: 2024-08-13", about_dialog)
+        created_by_label = QLabel("Created by: mssung@pubg.com", about_dialog)
+        first_production_date_label = QLabel("First production date: 2024-07-01", about_dialog)
+
+        #github_label = QLabel("GitHub link:", about_dialog)
+        github_icon = QLabel("Issues", about_dialog)
+        #pixmap = QPixmap("github_icon.png")  # Replace with the path to your GitHub icon
+        #github_icon.setPixmap(pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        github_icon.setCursor(Qt.PointingHandCursor)
+        github_icon.mousePressEvent = lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
+
+        layout.addWidget(version_label)
+        layout.addWidget(last_update_label)
+        layout.addWidget(created_by_label)
+        layout.addWidget(first_production_date_label)
+
+        h_layout = QHBoxLayout()
+        #h_layout.addWidget(github_label)
+        h_layout.addWidget(github_icon)
+        layout.addLayout(h_layout)
+
+        about_dialog.setLayout(layout)
+        about_dialog.exec_()
 
     def closeEvent(self, event):
         self.save_settings()
