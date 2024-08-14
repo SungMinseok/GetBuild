@@ -116,19 +116,19 @@ class FolderCopyApp(QWidget):
 
         # Second row
         self.input_box2 = QLineEdit(self)
-        self.folder_button2 = QPushButton('SET CLIENT DIRECTORY', self)        
+        self.folder_button2 = QPushButton('SET LOCAL DIRECTORY', self)        
         self.folder_button2.setFixedWidth(186)
         self.folder_button2.clicked.connect(lambda: self.choose_folder(self.input_box2))
         h_layout2.addWidget(self.input_box2)
         h_layout2.addWidget(self.folder_button2)
 
         # Additional second row
-        self.input_box2_1 = QLineEdit(self)
-        self.folder_button2_1 = QPushButton('SET SERVER DIRECTORY', self)
-        self.folder_button2_1.setFixedWidth(186)
-        self.folder_button2_1.clicked.connect(lambda: self.choose_folder(self.input_box2_1))
-        h_layout2_1.addWidget(self.input_box2_1)
-        h_layout2_1.addWidget(self.folder_button2_1)
+        # self.input_box2_1 = QLineEdit(self)
+        # self.folder_button2_1 = QPushButton('SET SERVER DIRECTORY', self)
+        # self.folder_button2_1.setFixedWidth(186)
+        # self.folder_button2_1.clicked.connect(lambda: self.choose_folder(self.input_box2_1))
+        # h_layout2_1.addWidget(self.input_box2_1)
+        # h_layout2_1.addWidget(self.folder_button2_1)
 
         # Third row
         self.combo_box = QComboBox(self)
@@ -333,7 +333,7 @@ class FolderCopyApp(QWidget):
         if reservation_option == "Only Client":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
         elif reservation_option == "Only Server":
-            self.copy_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
+            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
         elif reservation_option == "All":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
@@ -343,7 +343,7 @@ class FolderCopyApp(QWidget):
                 settings = json.load(file)
                 self.input_box1.setText(settings.get('input_box1', ''))
                 self.input_box2.setText(settings.get('input_box2', ''))
-                self.input_box2_1.setText(settings.get('input_box2_1', ''))
+                #self.input_box2_1.setText(settings.get('input_box2_1', ''))
                 self.combo_box.addItems(settings.get('combo_box', []))
                 self.input_box4.setText(settings.get('input_box4', ''))
                 time_value = settings.get('time_edit', '')
@@ -354,7 +354,7 @@ class FolderCopyApp(QWidget):
         settings = {
             'input_box1': self.input_box1.text(),
             'input_box2': self.input_box2.text(),
-            'input_box2_1': self.input_box2_1.text(),
+#            'input_box2_1': self.input_box2_1.text(),
             'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())],
             'input_box4': self.input_box4.text(),
             'time_edit': self.time_edit.time().toString('HH:mm'),
