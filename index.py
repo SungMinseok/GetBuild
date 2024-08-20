@@ -4,15 +4,18 @@ import shutil
 import json
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox, QLabel, QMenuBar, QAction, QDialog)
-from PyQt5.QtCore import (Qt, QTime, QTimer, QUrl)
+from PyQt5.QtCore import (Qt, QTime, QTimer, QUrl, QDateTime)
 from PyQt5.QtGui import QPixmap, QDesktopServices
 import zipfile
+from tqdm import tqdm
+from datetime import datetime, timedelta
 
 class FolderCopyApp(QWidget):
     def __init__(self):
         super().__init__()
         self.settings_file = 'settings.json'
         self.initUI()
+        self.resize(700, self.height())
         self.load_settings()
 
     def initUI(self):
@@ -82,7 +85,6 @@ class FolderCopyApp(QWidget):
         font-family: 'Malgun Gothic', sans-serif;
     }
 """)
-
         # Create a menu bar
         menu_bar = QMenuBar(self)
         about_menu = menu_bar.addMenu("Menu")
@@ -132,6 +134,9 @@ class FolderCopyApp(QWidget):
 
         # Third row
         self.combo_box = QComboBox(self)
+        self.capa_button = QPushButton('💿', self)
+        self.capa_button.setFixedWidth(35)
+        self.capa_button.clicked.connect(self.show_last_modification_time)
         self.refresh_button = QPushButton('↺', self)
         self.refresh_button.setFixedWidth(35)
         self.refresh_button.clicked.connect(self.refresh_dropdown)
@@ -152,6 +157,7 @@ class FolderCopyApp(QWidget):
         # self.copy_button2.setFixedWidth(120)
         # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
         h_layout3.addWidget(self.combo_box)
+        h_layout3.addWidget(self.capa_button)
         h_layout3.addWidget(self.refresh_button)
         h_layout3.addWidget(self.combo_box2)
         h_layout3.addWidget(self.copy_button)
@@ -365,14 +371,14 @@ class FolderCopyApp(QWidget):
     def show_about_dialog(self):
         about_dialog = QDialog(self)
         about_dialog.setWindowTitle("About")
-        about_dialog.setStyleSheet("""
-            QWidget {
-                background-color: #1a1a1a;
-                color: #ffffff;
-                font-family: 'NanumSquareEB', sans-serif;
-                font-size: 12pt;
-            }
-        """)
+        # about_dialog.setStyleSheet("""
+        #     QWidget {
+        #         background-color: #fafafa;
+        #         color: #000000;
+        #         font-family: 'NanumSquareEB', sans-serif;
+        #         font-size: 12pt;
+        #     }
+        # """)
 
         layout = QVBoxLayout()
 
@@ -400,6 +406,52 @@ class FolderCopyApp(QWidget):
 
         about_dialog.setLayout(layout)
         about_dialog.exec_()
+
+    def check_capacity(self):
+        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        
+        if not os.path.isdir(folder_path):
+            QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
+            return
+
+        total_size = 0
+        for dirpath, dirnames, filenames in tqdm(os.walk(folder_path)):
+            for file in filenames:
+                fp = os.path.join(dirpath, file)
+                total_size += os.path.getsize(fp)
+            print(total_size)
+
+        total_size_mb = total_size / (1024 * 1024)  # Convert to MB
+        QMessageBox.information(self, 'Folder Capacity', f'Total size of {self.combo_box.currentText()} is {total_size_mb:.2f} MB')
+
+    def show_last_modification_time(self):
+        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        
+        if not os.path.isdir(folder_path):
+            QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
+            return
+
+        # Get the last modification time of the folder
+        last_mod_time = os.path.getmtime(folder_path)
+        last_mod_datetime = datetime.fromtimestamp(last_mod_time)
+        formatted_time = last_mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Calculate the time passed since the last modification
+        current_time = datetime.now()
+        time_passed = current_time - last_mod_datetime
+        
+        # Format the time passed as days, hours, minutes, and seconds
+        days, seconds = time_passed.days, time_passed.seconds
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        
+        time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+        
+        QMessageBox.information(self, 'Last Modification Time', 
+                                f'Last modification time of {self.combo_box.currentText()} is {formatted_time}\n'
+                                f'Time passed since last modification: {time_passed_str}')
+
 
     def closeEvent(self, event):
         self.save_settings()
