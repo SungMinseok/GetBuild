@@ -105,6 +105,9 @@ class FolderCopyApp(QWidget):
 
         # First row
         self.input_box1 = QLineEdit(self)
+        self.open_folder_button1 = QPushButton('📁', self)        
+        self.open_folder_button1.setFixedWidth(35)
+        self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.input_box1.text()))       
         self.folder_button1 = QPushButton('SET SOURCE', self)
         #self.folder_button1.setFixedWidth(120)
         self.folder_button1.setFixedWidth(186)
@@ -113,15 +116,20 @@ class FolderCopyApp(QWidget):
         # self.open_folder_button1.setFixedWidth(60)
         # self.open_folder_button1.clicked.connect(self.open_folder1)
         h_layout1.addWidget(self.input_box1)
+        h_layout1.addWidget(self.open_folder_button1)
         h_layout1.addWidget(self.folder_button1)
         #h_layout1.addWidget(self.open_folder_button1)
 
         # Second row
         self.input_box2 = QLineEdit(self)
+        self.open_folder_button2 = QPushButton('📁', self)        
+        self.open_folder_button2.setFixedWidth(35)
+        self.open_folder_button2.clicked.connect(lambda: self.open_folder(self.input_box2.text()))      
         self.folder_button2 = QPushButton('SET LOCAL DIRECTORY', self)        
         self.folder_button2.setFixedWidth(186)
         self.folder_button2.clicked.connect(lambda: self.choose_folder(self.input_box2))
         h_layout2.addWidget(self.input_box2)
+        h_layout2.addWidget(self.open_folder_button2)
         h_layout2.addWidget(self.folder_button2)
 
         # Additional second row
@@ -134,7 +142,7 @@ class FolderCopyApp(QWidget):
 
         # Third row
         self.combo_box = QComboBox(self)
-        self.capa_button = QPushButton('💿', self)
+        self.capa_button = QPushButton('🕛', self)
         self.capa_button.setFixedWidth(35)
         self.capa_button.clicked.connect(self.show_last_modification_time)
         self.refresh_button = QPushButton('↺', self)
@@ -314,10 +322,9 @@ class FolderCopyApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
 
-    def open_folder1(self):
-        folder_path = self.input_box1.text()
+    def open_folder(self, path):
         try:
-            os.startfile(folder_path)
+            os.startfile(path)
         except:
             QMessageBox.critical(self, 'Error', 'Invalid directory.')
 
