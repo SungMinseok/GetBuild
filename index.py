@@ -105,6 +105,7 @@ class FolderCopyApp(QWidget):
 
         # First row
         self.input_box1 = QLineEdit(self)
+        self.input_box1.setText(fr'\\pubg-pds\PBB\Builds')
         self.open_folder_button1 = QPushButton('📁', self)        
         self.open_folder_button1.setFixedWidth(35)
         self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.input_box1.text()))       
