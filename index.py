@@ -555,7 +555,21 @@ class FolderCopyApp(QWidget):
                                 f'마지막수정시간: {last_mod_formatted_time}\n'
                                 f'소요시간: {last_mod_datetime-creation_datetime}\n'
         )
+            
+    def show_file_count(self):
+        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
         
+        if not os.path.isdir(folder_path):
+            QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
+            return
+
+        # Count all files in the folder
+        file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
+
+        # Show the file count in a pop-up
+        QMessageBox.information(self, 'File Count', 
+                                f'Total number of files in {self.combo_box.currentText()} is {file_count}')
+
     def closeEvent(self, event):
         self.save_settings()
         event.accept()
