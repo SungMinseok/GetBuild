@@ -145,10 +145,10 @@ class FolderCopyApp(QWidget):
         self.combo_box = QComboBox(self)
         self.capa_button = QPushButton('🕛', self)
         self.capa_button.setFixedWidth(35)
-        self.capa_button.clicked.connect(self.show_last_modification_time)
+        self.capa_button.clicked.connect(self.show_creation_time)#show_last_modification_time,show_creation_time
         self.refresh_button = QPushButton('↺', self)
         self.refresh_button.setFixedWidth(35)
-        self.refresh_button.clicked.connect(self.refresh_dropdown)
+        self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
         self.combo_box2.addItems(['Only Client','Only Server','All'])
@@ -218,6 +218,9 @@ class FolderCopyApp(QWidget):
             self.input_box2.setText(folder_path)
 
     def refresh_dropdown(self):
+        '''
+        sort by last modified time
+        '''
         self.combo_box.clear()
         folder_path = self.input_box1.text()
         filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
@@ -229,6 +232,29 @@ class FolderCopyApp(QWidget):
             for folder in folders:
                 if any(filter_text in folder for filter_text in filter_texts):
                     self.combo_box.addItem(folder)
+    
+    def refresh_dropdown_revision(self):        
+        '''
+        sort by revision
+        '''
+        # Get the list of items in the dropdown
+        items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
+
+        # Function to extract the revision number (integer after '_r')
+        def extract_revision_number(folder_name):
+            # Split the folder name by '_r' and take the last part
+            try:
+                return int(folder_name.split('_r')[-1])
+            except ValueError:
+                return 0  # In case of an invalid format, return 0 as the default
+
+        # Sort the items based on the extracted revision number in descending order
+        sorted_items = sorted(items, key=extract_revision_number, reverse=True)
+
+        # Clear the combo box and repopulate it with the sorted items
+        self.combo_box.clear()
+        self.combo_box.addItems(sorted_items)
+
 
     def copy_folder(self, dest_folder, target_folder, target_name):
         '''
@@ -343,7 +369,7 @@ class FolderCopyApp(QWidget):
         #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         if refresh :
-            self.refresh_dropdown()
+            self.refresh_dropdown_revision()
         if reservation_option == "Only Client":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
         elif reservation_option == "Only Server":
@@ -460,6 +486,42 @@ class FolderCopyApp(QWidget):
                                 f'Last modification time of {self.combo_box.currentText()} is {formatted_time}\n'
                                 f'Time passed since last modification: {time_passed_str}')
 
+    def show_creation_time(self):
+        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        
+        if not os.path.isdir(folder_path):
+            QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
+            return
+
+        # Get the creation time of the folder
+        try:
+            creation_time = os.path.getctime(folder_path)
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Unable to retrieve creation time: {str(e)}')
+            return
+
+        creation_datetime = datetime.fromtimestamp(creation_time)
+        formatted_time = creation_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Calculate the time passed since the creation
+        current_time = datetime.now()
+        time_passed = current_time - creation_datetime
+        
+        # Format the time passed as days, hours, minutes, and seconds
+        days, seconds = time_passed.days, time_passed.seconds
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        
+        time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+        
+        QMessageBox.information(self, 'Folder Creation Time', 
+                                f'Creation time of {self.combo_box.currentText()} is {formatted_time}\n'
+                                f'Time passed since creation: {time_passed_str}')
+        
+    def show_build_time_info(self):
+        pass
+        
 
     def closeEvent(self, event):
         self.save_settings()
