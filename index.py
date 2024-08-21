@@ -246,8 +246,12 @@ class FolderCopyApp(QWidget):
             folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
 
             for folder in folders:
-                if any(filter_text in folder for filter_text in filter_texts):
+                if len(filter_texts) != 0 :
+                    if any(filter_text in folder for filter_text in filter_texts):
+                        self.combo_box.addItem(folder)
+                else:
                     self.combo_box.addItem(folder)
+
 
         # Get the list of items in the dropdown
         items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
