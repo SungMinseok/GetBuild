@@ -145,7 +145,7 @@ class FolderCopyApp(QWidget):
         self.combo_box = QComboBox(self)
         self.capa_button = QPushButton('🕛', self)
         self.capa_button.setFixedWidth(35)
-        self.capa_button.clicked.connect(self.show_creation_time)#show_last_modification_time,show_creation_time
+        self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
         self.refresh_button = QPushButton('↺', self)
         self.refresh_button.setFixedWidth(35)
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
@@ -520,9 +520,42 @@ class FolderCopyApp(QWidget):
                                 f'Time passed since creation: {time_passed_str}')
         
     def show_build_time_info(self):
-        pass
+        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
         
+        if not os.path.isdir(folder_path):
+            QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
+            return
 
+        # Get the last modification time of the folder
+        last_mod_time = os.path.getmtime(folder_path)
+        last_mod_datetime = datetime.fromtimestamp(last_mod_time)
+        last_mod_formatted_time = last_mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get the creation time of the folder
+        try:
+            creation_time = os.path.getctime(folder_path)
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Unable to retrieve creation time: {str(e)}')
+            return
+
+        creation_datetime = datetime.fromtimestamp(creation_time)
+        creation_formatted_time = creation_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Format the time passed as days, hours, minutes, and seconds
+        #days, seconds = time_passed.days, time_passed.seconds
+        # hours = seconds // 3600
+        # minutes = (seconds % 3600) // 60
+        # seconds = seconds % 60
+        
+        #time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+        
+        QMessageBox.information(self, 'Folder Creation Time', 
+                                f'{self.combo_box.currentText()}\n'
+                                f'생성시간: {creation_formatted_time}\n'
+                                f'마지막수정시간: {last_mod_formatted_time}\n'
+                                f'소요시간: {last_mod_datetime-creation_datetime}\n'
+        )
+        
     def closeEvent(self, event):
         self.save_settings()
         event.accept()
