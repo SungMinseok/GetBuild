@@ -237,6 +237,18 @@ class FolderCopyApp(QWidget):
         '''
         sort by revision
         '''
+        self.combo_box.clear()
+        folder_path = self.input_box1.text()
+        filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+
+        if os.path.isdir(folder_path):
+            folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
+            folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+
+            for folder in folders:
+                if any(filter_text in folder for filter_text in filter_texts):
+                    self.combo_box.addItem(folder)
+
         # Get the list of items in the dropdown
         items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
 
@@ -569,6 +581,17 @@ class FolderCopyApp(QWidget):
         # Show the file count in a pop-up
         QMessageBox.information(self, 'File Count', 
                                 f'Total number of files in {self.combo_box.currentText()} is {file_count}')
+    
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_F12:
+            self.debug_function()  # Call the function to execute on F12 press
+
+    def debug_function(self):
+        self.show_file_count()
+        # Replace this with whatever you want to happen when F12 is pressed
+        #QMessageBox.information(self, 'Debugging', 'F12 pressed: Debugging function executed.')
+        pass
+
 
     def closeEvent(self, event):
         self.save_settings()
