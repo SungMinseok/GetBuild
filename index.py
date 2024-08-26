@@ -87,7 +87,7 @@ class FolderCopyApp(QWidget):
 """)
         # Create a menu bar
         menu_bar = QMenuBar(self)
-        about_menu = menu_bar.addMenu("Menu")
+        about_menu = menu_bar.addMenu("메뉴")
         about_action = QAction("About", self)
         about_action1 = QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
@@ -109,7 +109,7 @@ class FolderCopyApp(QWidget):
         self.open_folder_button1 = QPushButton('📁', self)        
         self.open_folder_button1.setFixedWidth(35)
         self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.input_box1.text()))       
-        self.folder_button1 = QPushButton('SET SOURCE', self)
+        self.folder_button1 = QPushButton('PDS 경로 설정', self)
         #self.folder_button1.setFixedWidth(120)
         self.folder_button1.setFixedWidth(186)
         self.folder_button1.clicked.connect(lambda: self.choose_folder(self.input_box1))
@@ -126,7 +126,7 @@ class FolderCopyApp(QWidget):
         self.open_folder_button2 = QPushButton('📁', self)        
         self.open_folder_button2.setFixedWidth(35)
         self.open_folder_button2.clicked.connect(lambda: self.open_folder(self.input_box2.text()))      
-        self.folder_button2 = QPushButton('SET LOCAL DIRECTORY', self)        
+        self.folder_button2 = QPushButton('로컬 경로 설정', self)        
         self.folder_button2.setFixedWidth(186)
         self.folder_button2.clicked.connect(lambda: self.choose_folder(self.input_box2))
         h_layout2.addWidget(self.input_box2)
@@ -151,9 +151,9 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['Only Client','Only Server','All'])
+        self.combo_box2.addItems(['클라이언트만','서버만','전체'])
         self.combo_box2.setFixedWidth(120)
-        self.copy_button = QPushButton('COPY', self)
+        self.copy_button = QPushButton('복사', self)
         self.copy_button.clicked.connect(self.execute_copy)
         self.copy_button.setFixedWidth(60)
         # self.copy_button = QPushButton('COPY CLIENT', self)
@@ -180,7 +180,7 @@ class FolderCopyApp(QWidget):
         # self.combo_box1 = QComboBox(self)
         # self.combo_box1.addItems(['Only Client','Only Server','All'])
         # self.combo_box1.setFixedWidth(120)
-        self.checkbox = QCheckBox('RESERVATION', self)
+        self.checkbox = QCheckBox('예약', self)
         h_layout4.addWidget(self.time_edit)
         h_layout4.addWidget(self.input_box4)
         #h_layout4.addWidget(self.combo_box1)
@@ -322,6 +322,13 @@ class FolderCopyApp(QWidget):
             QMessageBox.critical(self, 'Error', f'Failed to copy folder: {str(e)}')
 
     def zip_folder(self, dest_folder,target_folder, target_name):
+        '''
+        dest_folder:저장할 위치 'C:/mybuild'\n
+        target_folder:저장할 빌드명 'self.combo_box.currentText()'\n
+        target_name:저장할 폴더명 'WindowsClient'
+        self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+
+        '''
         src_folder = self.input_box1.text()
         #src_folder = 'c:/source'
         client_folder = self.combo_box.currentText()
@@ -386,11 +393,11 @@ class FolderCopyApp(QWidget):
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         if refresh :
             self.refresh_dropdown_revision()
-        if reservation_option == "Only Client":
+        if reservation_option == "클라이언트만":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
-        elif reservation_option == "Only Server":
+        elif reservation_option == "서버만":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
-        elif reservation_option == "All":
+        elif reservation_option == "전체":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
@@ -591,9 +598,11 @@ class FolderCopyApp(QWidget):
             self.debug_function()  # Call the function to execute on F12 press
 
     def debug_function(self):
-        self.show_file_count()
+        #self.show_file_count()
         # Replace this with whatever you want to happen when F12 is pressed
         #QMessageBox.information(self, 'Debugging', 'F12 pressed: Debugging function executed.')
+
+        self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
         pass
 
 
