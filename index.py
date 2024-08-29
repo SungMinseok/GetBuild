@@ -151,7 +151,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라이언트만','서버만','전체'])
+        self.combo_box2.addItems(['클라이언트만','서버만','서버패치','전체'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('복사', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -571,12 +571,14 @@ class FolderCopyApp(QWidget):
         # seconds = seconds % 60
         
         #time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+        file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
         
         QMessageBox.information(self, 'Folder Creation Time', 
                                 f'{self.combo_box.currentText()}\n'
                                 f'생성시간: {creation_formatted_time}\n'
-                                f'마지막수정시간: {last_mod_formatted_time}\n'
+                                f'마지막 수정시간: {last_mod_formatted_time}\n'
                                 f'소요시간: {last_mod_datetime-creation_datetime}\n'
+                                f'총 파일개수: {file_count}\n'
         )
             
     def show_file_count(self):
