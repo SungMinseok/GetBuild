@@ -9,6 +9,7 @@ from PyQt5.QtGui import QPixmap, QDesktopServices
 import zipfile
 from tqdm import tqdm
 from datetime import datetime, timedelta
+import aws
 
 class FolderCopyApp(QWidget):
     def __init__(self):
@@ -143,6 +144,9 @@ class FolderCopyApp(QWidget):
 
         # Third row
         self.combo_box = QComboBox(self)
+        self.open_folder_button3 = QPushButton('📁', self)        
+        self.open_folder_button3.setFixedWidth(35)
+        self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box1.text(),self.combo_box.currentText())))     
         self.capa_button = QPushButton('🕛', self)
         self.capa_button.setFixedWidth(35)
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
@@ -151,9 +155,9 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라이언트만','서버만','서버패치','전체'])
+        self.combo_box2.addItems(['클라복사','서버복사','서버패치','전체복사'])
         self.combo_box2.setFixedWidth(120)
-        self.copy_button = QPushButton('복사', self)
+        self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
         self.copy_button.setFixedWidth(60)
         # self.copy_button = QPushButton('COPY CLIENT', self)
@@ -166,6 +170,7 @@ class FolderCopyApp(QWidget):
         # self.copy_button2.setFixedWidth(120)
         # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
         h_layout3.addWidget(self.combo_box)
+        h_layout3.addWidget(self.open_folder_button3)
         h_layout3.addWidget(self.capa_button)
         h_layout3.addWidget(self.refresh_button)
         h_layout3.addWidget(self.combo_box2)
@@ -177,12 +182,16 @@ class FolderCopyApp(QWidget):
         self.time_edit = QTimeEdit(self)
         self.time_edit.setDisplayFormat("HH:mm")
         self.input_box4 = QLineEdit(self)
+        self.input_box4.setPlaceholderText('빌드명 포함 스트링(;로 구분)')
+        self.input_box5 = QLineEdit(self)
+        self.input_box5.setPlaceholderText('AWS 주소')
         # self.combo_box1 = QComboBox(self)
         # self.combo_box1.addItems(['Only Client','Only Server','All'])
         # self.combo_box1.setFixedWidth(120)
         self.checkbox = QCheckBox('예약', self)
         h_layout4.addWidget(self.time_edit)
         h_layout4.addWidget(self.input_box4)
+        h_layout4.addWidget(self.input_box5)
         #h_layout4.addWidget(self.combo_box1)
         h_layout4.addWidget(self.checkbox)
 
@@ -232,7 +241,14 @@ class FolderCopyApp(QWidget):
             for folder in folders:
                 if any(filter_text in folder for filter_text in filter_texts):
                     self.combo_box.addItem(folder)
-    
+
+    # Function to extract the revision number (integer after '_r')
+    def extract_revision_number(self,folder_name):
+        # Split the folder name by '_r' and take the last part
+        try:
+            return int(folder_name.split('_r')[-1])
+        except ValueError:
+            return 0  # In case of an invalid format, return 0 as the default
     def refresh_dropdown_revision(self):        
         '''
         sort by revision
@@ -256,16 +272,9 @@ class FolderCopyApp(QWidget):
         # Get the list of items in the dropdown
         items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
 
-        # Function to extract the revision number (integer after '_r')
-        def extract_revision_number(folder_name):
-            # Split the folder name by '_r' and take the last part
-            try:
-                return int(folder_name.split('_r')[-1])
-            except ValueError:
-                return 0  # In case of an invalid format, return 0 as the default
 
         # Sort the items based on the extracted revision number in descending order
-        sorted_items = sorted(items, key=extract_revision_number, reverse=True)
+        sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
 
         # Clear the combo box and repopulate it with the sorted items
         self.combo_box.clear()
@@ -329,6 +338,7 @@ class FolderCopyApp(QWidget):
         self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
 
         '''
+        #print(revision)
         src_folder = self.input_box1.text()
         #src_folder = 'c:/source'
         client_folder = self.combo_box.currentText()
@@ -345,30 +355,45 @@ class FolderCopyApp(QWidget):
             return
 
         try:
+            
             dest_path = os.path.join(dest_folder, target_folder)
+    
+            if not os.path.exists(dest_path):
+                os.makedirs(dest_path)
             zip_file = os.path.join(dest_path, f"{target_name}.zip")
+            if not os.path.isfile(zip_file):
 
-            self.progress_dialog = QProgressDialog(f"Zipping {target_name} files...", "Cancel", 0, 100, self)
-            self.progress_dialog.setWindowModality(Qt.WindowModal)
-            self.progress_dialog.setValue(0)
+                self.progress_dialog = QProgressDialog(f"Zipping {target_name} files...", "Cancel", 0, 100, self)
+                self.progress_dialog.setWindowModality(Qt.WindowModal)
+                self.progress_dialog.setValue(0)
 
-            with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(folder_to_zip):
-                    for file in files:
-                        if self.progress_dialog.wasCanceled():
-                            QMessageBox.information(self, 'Cancelled', 'Zipping cancelled.')
-                            return
+                with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for root, dirs, files in os.walk(folder_to_zip):
+                        for file in files:
+                            if self.progress_dialog.wasCanceled():
+                                QMessageBox.information(self, 'Cancelled', 'Zipping cancelled.')
+                                return
 
-                        src_file = os.path.join(root, file)
-                        rel_path = os.path.relpath(root, folder_to_zip)
-                        zipf.write(src_file, os.path.join(rel_path, file))
+                            src_file = os.path.join(root, file)
+                            rel_path = os.path.relpath(root, folder_to_zip)
+                            zipf.write(src_file, os.path.join(rel_path, file))
 
-                        # Update progress
-                        progress = (files.index(file) + 1) / len(files) * 100
-                        self.progress_dialog.setValue(int(progress))
+                            # Update progress
+                            progress = (files.index(file) + 1) / len(files) * 100
+                            self.progress_dialog.setValue(int(progress))
 
-            self.progress_dialog.setValue(100)
-            QMessageBox.information(self, 'Success', 'Folder zipped successfully.')
+                self.progress_dialog.setValue(100)
+                #QMessageBox.information(self, 'Success', 'Folder zipped successfully.')
+                print('Folder zipped successfully.')
+
+            else:
+                print('zip is already created.')
+                pass
+            
+            revision = self.extract_revision_number(target_folder)
+            aws_url = self.input_box5.text()
+            aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
+            aws.aws_update_custom(None,revision,aws_url)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
 
@@ -393,12 +418,14 @@ class FolderCopyApp(QWidget):
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         if refresh :
             self.refresh_dropdown_revision()
-        if reservation_option == "클라이언트만":
+        if reservation_option == "클라복사":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
-        elif reservation_option == "서버만":
+        elif reservation_option == "서버복사":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
-        elif reservation_option == "전체":
+        elif reservation_option == "전체복사":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
+        elif reservation_option == "서버패치":
+            self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
         if os.path.exists(self.settings_file):
@@ -409,6 +436,7 @@ class FolderCopyApp(QWidget):
                 #self.input_box2_1.setText(settings.get('input_box2_1', ''))
                 self.combo_box.addItems(settings.get('combo_box', []))
                 self.input_box4.setText(settings.get('input_box4', ''))
+                self.input_box5.setText(settings.get('input_box5', ''))
                 time_value = settings.get('time_edit', '')
             if time_value:
                 self.time_edit.setTime(QTime.fromString(time_value, 'HH:mm'))
@@ -420,6 +448,7 @@ class FolderCopyApp(QWidget):
 #            'input_box2_1': self.input_box2_1.text(),
             'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())],
             'input_box4': self.input_box4.text(),
+            'input_box5': self.input_box5.text(),
             'time_edit': self.time_edit.time().toString('HH:mm'),
         }
         with open(self.settings_file, 'w') as file:
@@ -605,6 +634,12 @@ class FolderCopyApp(QWidget):
         #QMessageBox.information(self, 'Debugging', 'F12 pressed: Debugging function executed.')
 
         self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
+        
+        # target_folder = self.combo_box.currentText()
+        # revision = self.extract_revision_number(target_folder)
+        # aws_url = self.input_box5.text()
+        # aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
+        # aws.aws_update_custom(None,revision,aws_url)
         pass
 
 
