@@ -142,31 +142,39 @@ def aws_update_custom(driver,revision,aws_link):
     driver.implicitly_wait(5)
     #MENU - update
     driver.find_element(By.XPATH,'/html/body/div[4]/div/ul/li[1]/div/div').click()
+    time.sleep(0.5)
     driver.implicitly_wait(5)
     #os.system("pause")
     
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/fieldset/div/div/div[2]/div[2]/div/button').click()
+    time.sleep(0.5)
     
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys('CUSTOM')
-    time.sleep(1)
+    time.sleep(1.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
+    time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
     
-    time.sleep(1)
+    time.sleep(1.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys('game')
-    time.sleep(1)
+    time.sleep(1.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
+    time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
     
     time.sleep(1)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{revision}a')
     time.sleep(1)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
+    time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
     
+    time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/button').click()
+    time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/fieldset/div/div/div[4]/div/button').click()
-    #driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/button[1]').click()
+    time.sleep(0.5)
+    driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/button[1]').click()
     #os.system("pause")
 
 def aws_stop():
