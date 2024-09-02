@@ -10,6 +10,7 @@ import zipfile
 from tqdm import tqdm
 from datetime import datetime, timedelta
 import aws
+from makelog import *
 
 class FolderCopyApp(QWidget):
     def __init__(self):
@@ -230,6 +231,7 @@ class FolderCopyApp(QWidget):
         '''
         sort by last modified time
         '''
+        
         self.combo_box.clear()
         folder_path = self.input_box1.text()
         filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
@@ -262,6 +264,10 @@ class FolderCopyApp(QWidget):
             folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
 
             for folder in folders:
+                #temp_file_count = self.get_file_count(os.path.join(folder_path,folder))
+                # if temp_file_count < 670 :
+                #     print(f'{folder}의 파일 개수 미달로 패스 : {temp_file_count}')
+                #     continue
                 if len(filter_texts) != 0 :
                     if any(filter_text in folder for filter_text in filter_texts):
                         self.combo_box.addItem(folder)
@@ -287,6 +293,7 @@ class FolderCopyApp(QWidget):
         target_folder:저장할 빌드명 'self.combo_box.currentText()'\n
         target_name:저장할 폴더명 'WindowsClient'
         '''
+        log_execution()
         src_folder = self.input_box1.text()
         #dest_folder = self.input_box2.text()
         #clinet_folder = self.combo_box.currentText()
@@ -326,8 +333,10 @@ class FolderCopyApp(QWidget):
                     self.progress_dialog.setValue(int(progress))
 
             self.progress_dialog.setValue(100)
+            log_execution()
             QMessageBox.information(self, 'Success', 'Folder copied successfully.')
         except Exception as e:
+            log_execution()
             QMessageBox.critical(self, 'Error', f'Failed to copy folder: {str(e)}')
 
     def zip_folder(self, dest_folder,target_folder, target_name):
@@ -339,6 +348,7 @@ class FolderCopyApp(QWidget):
 
         '''
         #print(revision)
+        log_execution()
         src_folder = self.input_box1.text()
         #src_folder = 'c:/source'
         client_folder = self.combo_box.currentText()
@@ -383,10 +393,12 @@ class FolderCopyApp(QWidget):
                             self.progress_dialog.setValue(int(progress))
 
                 self.progress_dialog.setValue(100)
+                log_execution()
                 #QMessageBox.information(self, 'Success', 'Folder zipped successfully.')
                 print('Folder zipped successfully.')
 
             else:
+                log_execution()
                 print('zip is already created.')
                 pass
             
@@ -412,6 +424,7 @@ class FolderCopyApp(QWidget):
                 self.checkbox.setChecked(False)
 
     def execute_copy(self, refresh = False):
+        log_execution()
         reservation_option = self.combo_box2.currentText() #Only Client, Only Server, All
         #QMessageBox.information(self, 'Test', 'Timer executed.')
         #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
@@ -618,12 +631,16 @@ class FolderCopyApp(QWidget):
             return
 
         # Count all files in the folder
-        file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
+        #file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
+        file_count = self.get_file_count(folder_path)
 
         # Show the file count in a pop-up
         QMessageBox.information(self, 'File Count', 
                                 f'Total number of files in {self.combo_box.currentText()} is {file_count}')
     
+    def get_file_count(self, folder_path):
+        return sum([len(files) for _, _, files in os.walk(folder_path)])
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_F12:
             self.debug_function()  # Call the function to execute on F12 press
