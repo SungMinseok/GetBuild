@@ -1,0 +1,64 @@
+QWidget {
+    background-color: #ff0000;
+    color: #ffffff;
+    border-radius: 10px;
+    border: 1px solid #333333;
+    
+    font-family: 'Malgun Gothic', sans-serif;
+    font-size: 11pt;
+    font-weight: bold;
+}
+
+QLineEdit {
+    background-color: #333333;
+    border: 1px solid #555555;
+    padding: 5px;
+    border-radius: 5px;
+    font-family: 'Malgun Gothic', sans-serif;
+}
+
+QPushButton {
+    background-color: #ff0000;
+    border: 1px solid #666666;
+    border-radius: 5px;
+    padding: 5px;
+    font-family: 'Malgun Gothic', sans-serif;
+}
+
+QPushButton:hover {
+    background-color: #555555;
+}
+
+QPushButton:pressed {
+    background-color: #666666;
+}
+
+QComboBox {
+    background-color: #333333;
+    border: 1px solid #555555;
+    padding: 5px;
+    border-radius: 5px;
+    font-family: 'Malgun Gothic', sans-serif;
+}
+
+QCheckBox {
+    background-color: transparent;
+    border: none;
+    font-family: 'Malgun Gothic', sans-serif;
+}
+
+QProgressDialog {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    border-radius: 10px;
+    border: 1px solid #333333;
+    font-family: 'Malgun Gothic', sans-serif;
+}
+
+QTimeEdit {
+    background-color: #333333;
+    border: 1px solid #555555;
+    padding: 5px;
+    border-radius: 5px;
+    font-family: 'Malgun Gothic', sans-serif;
+}
