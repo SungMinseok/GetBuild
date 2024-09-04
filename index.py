@@ -11,6 +11,7 @@ from tqdm import tqdm
 from datetime import datetime, timedelta
 import aws
 from makelog import *
+import time
 
 class FolderCopyApp(QWidget):
     def __init__(self):
@@ -22,71 +23,73 @@ class FolderCopyApp(QWidget):
 
     def initUI(self):
         # Apply the custom stylesheet
-        self.setStyleSheet("""
-    QWidget {
-        background-color: #1a1a1a;
-        color: #ffffff;
-        border-radius: 10px;
-        border: 1px solid #333333;
-        font-family: 'Malgun Gothic', sans-serif;
-        font-size: 11pt;
-        font-weight: bold
-    }
+        self.load_stylesheet("qss\default.qss")
+        #self.load_stylesheet(fr"qss/red.qss")
+#         self.setStyleSheet("""
+#     QWidget {
+#         background-color: #1a1a1a;
+#         color: #ffffff;
+#         border-radius: 10px;
+#         border: 1px solid #333333;
+#         font-family: 'Malgun Gothic', sans-serif;
+#         font-size: 11pt;
+#         font-weight: bold
+#     }
 
-    QLineEdit {
-        background-color: #333333;
-        border: 1px solid #555555;
-        padding: 5px;
-        border-radius: 5px;
-        font-family: 'Malgun Gothic', sans-serif;
-    }
+#     QLineEdit {
+#         background-color: #333333;
+#         border: 1px solid #555555;
+#         padding: 5px;
+#         border-radius: 5px;
+#         font-family: 'Malgun Gothic', sans-serif;
+#     }
 
-    QPushButton {
-        background-color: #444444;
-        border: 1px solid #666666;
-        border-radius: 5px;
-        padding: 5px;
-        font-family: 'Malgun Gothic', sans-serif;
-    }
+#     QPushButton {
+#         background-color: #444444;
+#         border: 1px solid #666666;
+#         border-radius: 5px;
+#         padding: 5px;
+#         font-family: 'Malgun Gothic', sans-serif;
+#     }
 
-    QPushButton:hover {
-        background-color: #555555;
-    }
+#     QPushButton:hover {
+#         background-color: #555555;
+#     }
 
-    QPushButton:pressed {
-        background-color: #666666;
-    }
+#     QPushButton:pressed {
+#         background-color: #666666;
+#     }
 
-    QComboBox {
-        background-color: #333333;
-        border: 1px solid #555555;
-        padding: 5px;
-        border-radius: 5px;
-        font-family: 'Malgun Gothic', sans-serif;
-    }
+#     QComboBox {
+#         background-color: #333333;
+#         border: 1px solid #555555;
+#         padding: 5px;
+#         border-radius: 5px;
+#         font-family: 'Malgun Gothic', sans-serif;
+#     }
 
-    QCheckBox {
-        background-color: transparent;
-        border: none;
-        font-family: 'Malgun Gothic', sans-serif;
-    }
+#     QCheckBox {
+#         background-color: transparent;
+#         border: none;
+#         font-family: 'Malgun Gothic', sans-serif;
+#     }
 
-    QProgressDialog {
-        background-color: #1a1a1a;
-        color: #ffffff;
-        border-radius: 10px;
-        border: 1px solid #333333;
-        font-family: 'Malgun Gothic', sans-serif;
-    }
+#     QProgressDialog {
+#         background-color: #1a1a1a;
+#         color: #ffffff;
+#         border-radius: 10px;
+#         border: 1px solid #333333;
+#         font-family: 'Malgun Gothic', sans-serif;
+#     }
 
-    QTimeEdit {
-        background-color: #333333;
-        border: 1px solid #555555;
-        padding: 5px;
-        border-radius: 5px;
-        font-family: 'Malgun Gothic', sans-serif;
-    }
-""")
+#     QTimeEdit {
+#         background-color: #333333;
+#         border: 1px solid #555555;
+#         padding: 5px;
+#         border-radius: 5px;
+#         font-family: 'Malgun Gothic', sans-serif;
+#     }
+# """)
         # Create a menu bar
         menu_bar = QMenuBar(self)
         about_menu = menu_bar.addMenu("메뉴")
@@ -255,20 +258,30 @@ class FolderCopyApp(QWidget):
         '''
         sort by revision
         '''
+        
+        self.load_stylesheet(fr"qss/red.qss")
+        time.sleep(1)
+
         self.combo_box.clear()
         folder_path = self.input_box1.text()
         filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+
+        check_file_count = False # 최신순으로 파일 개수 체크 후, 조건을 만족하는 순간 TRUE, 더 이상 체크하지 않음
 
         if os.path.isdir(folder_path):
             folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
             folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
 
             for folder in folders:
-                #temp_file_count = self.get_file_count(os.path.join(folder_path,folder))
-                # if temp_file_count < 670 :
-                #     print(f'{folder}의 파일 개수 미달로 패스 : {temp_file_count}')
-                #     continue
+                if not check_file_count :
+                    temp_file_count = self.get_file_count(os.path.join(folder_path,folder))
+                    if temp_file_count < 670:
+                        print(f'{folder}의 파일 개수 미달로 패스 : {temp_file_count}')
+                        continue
                 if len(filter_texts) != 0 :
+                    if not check_file_count :
+                        print(f'{folder}의 파일 개수 통과, 더 이상 체크 안함 : {temp_file_count}')
+                        check_file_count = True
                     if any(filter_text in folder for filter_text in filter_texts):
                         self.combo_box.addItem(folder)
                 else:
@@ -285,7 +298,7 @@ class FolderCopyApp(QWidget):
         # Clear the combo box and repopulate it with the sorted items
         self.combo_box.clear()
         self.combo_box.addItems(sorted_items)
-
+        self.load_stylesheet("qss\default.qss")
 
     def copy_folder(self, dest_folder, target_folder, target_name):
         '''
@@ -650,19 +663,32 @@ class FolderCopyApp(QWidget):
         # Replace this with whatever you want to happen when F12 is pressed
         #QMessageBox.information(self, 'Debugging', 'F12 pressed: Debugging function executed.')
 
-        self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
+        #self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
         
         # target_folder = self.combo_box.currentText()
         # revision = self.extract_revision_number(target_folder)
         # aws_url = self.input_box5.text()
         # aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
         # aws.aws_update_custom(None,revision,aws_url)
+        self.set_loading_state(True)
         pass
 
 
     def closeEvent(self, event):
         self.save_settings()
         event.accept()
+
+    def set_loading_state(self, is_loading):
+        if is_loading:
+            self.setStyleSheet("background-color: darkblue;")
+            self.setDisabled(True)
+        else:
+            self.setStyleSheet("")
+            self.setDisabled(False)
+
+    def load_stylesheet(self, filepath):
+        with open(filepath, "r") as file:
+            self.setStyleSheet(file.read())
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
