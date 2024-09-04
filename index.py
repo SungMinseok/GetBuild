@@ -5,7 +5,7 @@ import json
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox, QLabel, QMenuBar, QAction, QDialog)
 from PyQt5.QtCore import (Qt, QTime, QTimer, QUrl, QDateTime)
-from PyQt5.QtGui import QPixmap, QDesktopServices
+from PyQt5.QtGui import QPixmap, QDesktopServices, QIcon
 import zipfile
 from tqdm import tqdm
 from datetime import datetime, timedelta
@@ -23,7 +23,8 @@ class FolderCopyApp(QWidget):
 
     def initUI(self):
         # Apply the custom stylesheet
-        self.load_stylesheet("qss\default.qss")
+        self.setWindowIcon(QIcon('pbb.ico'))
+        self.load_stylesheet(fr"qss\default.qss")
         #self.load_stylesheet(fr"qss/red.qss")
 #         self.setStyleSheet("""
 #     QWidget {
@@ -112,7 +113,7 @@ class FolderCopyApp(QWidget):
         self.input_box1 = QLineEdit(self)
         self.input_box1.setText(fr'\\pubg-pds\PBB\Builds')
         self.open_folder_button1 = QPushButton('📁', self)        
-        self.open_folder_button1.setFixedWidth(35)
+        self.open_folder_button1.setFixedWidth(25)
         self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.input_box1.text()))       
         self.folder_button1 = QPushButton('PDS 경로 설정', self)
         #self.folder_button1.setFixedWidth(120)
@@ -129,7 +130,7 @@ class FolderCopyApp(QWidget):
         # Second row
         self.input_box2 = QLineEdit(self)
         self.open_folder_button2 = QPushButton('📁', self)        
-        self.open_folder_button2.setFixedWidth(35)
+        self.open_folder_button2.setFixedWidth(25)
         self.open_folder_button2.clicked.connect(lambda: self.open_folder(self.input_box2.text()))      
         self.folder_button2 = QPushButton('로컬 경로 설정', self)        
         self.folder_button2.setFixedWidth(186)
@@ -149,13 +150,13 @@ class FolderCopyApp(QWidget):
         # Third row
         self.combo_box = QComboBox(self)
         self.open_folder_button3 = QPushButton('📁', self)        
-        self.open_folder_button3.setFixedWidth(35)
+        self.open_folder_button3.setFixedWidth(25)
         self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box1.text(),self.combo_box.currentText())))     
         self.capa_button = QPushButton('🕛', self)
-        self.capa_button.setFixedWidth(35)
+        self.capa_button.setFixedWidth(25)
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
         self.refresh_button = QPushButton('↺', self)
-        self.refresh_button.setFixedWidth(35)
+        self.refresh_button.setFixedWidth(25)
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
@@ -298,7 +299,7 @@ class FolderCopyApp(QWidget):
         # Clear the combo box and repopulate it with the sorted items
         self.combo_box.clear()
         self.combo_box.addItems(sorted_items)
-        self.load_stylesheet("qss\default.qss")
+        self.load_stylesheet(fr"qss\default.qss")
 
     def copy_folder(self, dest_folder, target_folder, target_name):
         '''
