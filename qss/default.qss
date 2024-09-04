@@ -11,7 +11,7 @@ QWidget {
 QLineEdit {
     background-color: #333333;
     border: 1px solid #555555;
-    padding: 5px;
+    /* /* padding: 5px; */
     border-radius: 5px;
     font-family: 'Malgun Gothic', sans-serif;
 }
@@ -20,7 +20,7 @@ QPushButton {
     background-color: #444444;
     border: 1px solid #666666;
     border-radius: 5px;
-    padding: 5px;
+    /* padding: 5px; */
     font-family: 'Malgun Gothic', sans-serif;
 }
 
@@ -35,7 +35,7 @@ QPushButton:pressed {
 QComboBox {
     background-color: #333333;
     border: 1px solid #555555;
-    padding: 5px;
+    /* padding: 5px; */
     border-radius: 5px;
     font-family: 'Malgun Gothic', sans-serif;
 }
@@ -57,7 +57,7 @@ QProgressDialog {
 QTimeEdit {
     background-color: #333333;
     border: 1px solid #555555;
-    padding: 5px;
+    /* padding: 5px; */
     border-radius: 5px;
     font-family: 'Malgun Gothic', sans-serif;
 }
