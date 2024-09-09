@@ -494,9 +494,10 @@ class FolderCopyApp(QWidget):
         # """)
 
         layout = QVBoxLayout()
+        recent_file_name, recent_moditime = self.get_most_recent_file()
 
         version_label = QLabel("Version: v1.0", about_dialog)
-        last_update_label = QLabel("Last update date: 2024-08-13", about_dialog)
+        last_update_label = QLabel(f"Last update date: {recent_moditime}", about_dialog)
         created_by_label = QLabel("Created by: mssung@pubg.com", about_dialog)
         first_production_date_label = QLabel("First production date: 2024-07-01", about_dialog)
 
@@ -671,7 +672,8 @@ class FolderCopyApp(QWidget):
         # aws_url = self.input_box5.text()
         # aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
         # aws.aws_update_custom(None,revision,aws_url)
-        self.set_loading_state(True)
+        #self.set_loading_state(True)
+        print(self.get_most_recent_file())
         pass
 
 
@@ -690,6 +692,30 @@ class FolderCopyApp(QWidget):
     def load_stylesheet(self, filepath):
         with open(filepath, "r") as file:
             self.setStyleSheet(file.read())
+
+    def get_most_recent_file(self):
+        # Get a list of all files in the current directory
+        #files = [f for f in os.listdir('.') if os.path.isfile(f)]
+        files = [f for f in os.listdir('.') if os.path.isfile(f) and not f.endswith('.json')]
+        # Initialize variables to track the most recent file and its modification time
+        most_recent_file = None
+        most_recent_time = 0
+        
+        for file in files:
+            # Get the last modification time
+            mod_time = os.path.getmtime(file)
+            
+            # Check if this file is the most recent one we've encountered
+            if mod_time > most_recent_time:
+                most_recent_time = mod_time
+                most_recent_file = file
+        
+        if most_recent_file:
+            # Convert the most recent time to a readable format
+            most_recent_time_readable = datetime.fromtimestamp(most_recent_time).strftime('%Y-%m-%d %H:%M:%S')
+            return most_recent_file, most_recent_time_readable
+        else:
+            return None, None
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
