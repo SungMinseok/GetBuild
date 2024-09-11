@@ -91,13 +91,14 @@ class FolderCopyApp(QWidget):
 #         font-family: 'Malgun Gothic', sans-serif;
 #     }
 # """)
-        # Create a menu bar
+        # Create a menu bar //lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
         menu_bar = QMenuBar(self)
         about_menu = menu_bar.addMenu("메뉴")
         about_action = QAction("About", self)
-        about_action1 = QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
-        about_menu.addActions([about_action])
+        about_action1 = QAction("Report Bugs", self)
+        about_action1.triggered.connect(lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues")))
+        about_menu.addActions([about_action,about_action1])
 
         layout = QVBoxLayout()
         layout.setMenuBar(menu_bar)
@@ -160,7 +161,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','서버복사','서버패치','전체복사'])
+        self.combo_box2.addItems(['클라복사','서버복사','서버업로드','서버패치','전체복사'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -353,13 +354,14 @@ class FolderCopyApp(QWidget):
             log_execution()
             QMessageBox.critical(self, 'Error', f'Failed to copy folder: {str(e)}')
 
-    def zip_folder(self, dest_folder,target_folder, target_name):
+    def zip_folder(self, dest_folder,target_folder, target_name, update:bool):
         '''
         dest_folder:저장할 위치 'C:/mybuild'\n
         target_folder:저장할 빌드명 'self.combo_box.currentText()'\n
         target_name:저장할 폴더명 'WindowsClient'
-        self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
 
+        update : true, upload + update실행, false upload만 실행
         '''
         #print(revision)
         log_execution()
@@ -419,7 +421,8 @@ class FolderCopyApp(QWidget):
             revision = self.extract_revision_number(target_folder)
             aws_url = self.input_box5.text()
             aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
-            aws.aws_update_custom(None,revision,aws_url)
+            if(update):
+                aws.aws_update_custom(None,revision,aws_url)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
 
@@ -451,8 +454,10 @@ class FolderCopyApp(QWidget):
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
         elif reservation_option == "전체복사":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
+        elif reservation_option == "서버업로드":
+            self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',False)
         elif reservation_option == "서버패치":
-            self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
+            self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',True)
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
         if os.path.exists(self.settings_file):
@@ -503,8 +508,8 @@ class FolderCopyApp(QWidget):
 
         #github_label = QLabel("GitHub link:", about_dialog)
         github_icon = QLabel("Issues", about_dialog)
-        #pixmap = QPixmap("github_icon.png")  # Replace with the path to your GitHub icon
-        #github_icon.setPixmap(pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        pixmap = QPixmap("github_icon.png")  # Replace with the path to your GitHub icon
+        github_icon.setPixmap(pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         github_icon.setCursor(Qt.PointingHandCursor)
         github_icon.mousePressEvent = lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
 
