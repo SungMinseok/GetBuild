@@ -88,7 +88,7 @@ def aws_upload_custom(driver, revision, zip_path, aws_link, branch = 'game'):
     driver.implicitly_wait(5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/form/div[1]/div[2]/div/div').send_keys('seoul')
     driver.find_element(By.XPATH,'//*[@id="Branch"]').send_keys(branch)
-    driver.find_element(By.XPATH,'//*[@id="Revision"]').send_keys(f'{revision}a')
+    driver.find_element(By.XPATH,'//*[@id="Revision"]').send_keys(f'{revision}')
     driver.implicitly_wait(5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/form/div[4]/div[2]/input').send_keys(zip_path)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/form/div[5]/div/button').click()
@@ -163,7 +163,7 @@ def aws_update_custom(driver,revision,aws_link, branch = 'game'):
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
     
     time.sleep(1)
-    driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{revision}a')
+    driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{revision}')
     time.sleep(1)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
     time.sleep(0.5)
