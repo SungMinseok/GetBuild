@@ -425,9 +425,10 @@ class FolderCopyApp(QWidget):
             
             revision = self.extract_revision_number(target_folder)
             aws_url = self.input_box5.text()
-            aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
+            branch = self.input_box6.text()
+            aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url,branch=branch)
             if(update):
-                aws.aws_update_custom(None,revision,aws_url)
+                aws.aws_update_custom(None,revision,aws_url,branch=branch)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
 

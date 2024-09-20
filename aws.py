@@ -62,7 +62,7 @@ def start_driver():
     
     return driver
 
-def aws_upload_custom(driver, revision, zip_path, aws_link):
+def aws_upload_custom(driver, revision, zip_path, aws_link, branch = 'game'):
     if driver == None :
 
         driver = start_driver()
@@ -87,7 +87,7 @@ def aws_upload_custom(driver, revision, zip_path, aws_link):
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/fieldset/div/div/div[3]/div/button').click()
     driver.implicitly_wait(5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/form/div[1]/div[2]/div/div').send_keys('seoul')
-    driver.find_element(By.XPATH,'//*[@id="Branch"]').send_keys('game')
+    driver.find_element(By.XPATH,'//*[@id="Branch"]').send_keys(branch)
     driver.find_element(By.XPATH,'//*[@id="Revision"]').send_keys(f'{revision}a')
     driver.implicitly_wait(5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/form/div[4]/div[2]/input').send_keys(zip_path)
@@ -110,7 +110,7 @@ def aws_upload_custom(driver, revision, zip_path, aws_link):
 
     #os.system("pause")
 
-def aws_update_custom(driver,revision,aws_link):
+def aws_update_custom(driver,revision,aws_link, branch = 'game'):
     
     if driver == None :
         driver = start_driver()
@@ -156,7 +156,7 @@ def aws_update_custom(driver,revision,aws_link):
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
     
     time.sleep(1.5)
-    driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys('game')
+    driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(branch)
     time.sleep(1.5)
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
     time.sleep(0.5)
