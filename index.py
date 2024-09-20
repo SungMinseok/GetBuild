@@ -23,7 +23,7 @@ class FolderCopyApp(QWidget):
 
     def initUI(self):
         # Apply the custom stylesheet
-        self.setWindowIcon(QIcon('pbb.ico'))
+        self.setWindowIcon(QIcon('ico.ico'))
         self.load_stylesheet(fr"qss\default.qss")
         #self.load_stylesheet(fr"qss/red.qss")
 #         self.setStyleSheet("""
@@ -507,11 +507,11 @@ class FolderCopyApp(QWidget):
         first_production_date_label = QLabel("First production date: 2024-07-01", about_dialog)
 
         #github_label = QLabel("GitHub link:", about_dialog)
-        github_icon = QLabel("Issues", about_dialog)
-        pixmap = QPixmap("github_icon.png")  # Replace with the path to your GitHub icon
-        github_icon.setPixmap(pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        github_icon.setCursor(Qt.PointingHandCursor)
-        github_icon.mousePressEvent = lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
+        # github_icon = QLabel("Issues", about_dialog)
+        # pixmap = QPixmap("github_icon.png")  # Replace with the path to your GitHub icon
+        # github_icon.setPixmap(pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        # github_icon.setCursor(Qt.PointingHandCursor)
+        # github_icon.mousePressEvent = lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
 
         layout.addWidget(version_label)
         layout.addWidget(last_update_label)
@@ -520,7 +520,7 @@ class FolderCopyApp(QWidget):
 
         h_layout = QHBoxLayout()
         #h_layout.addWidget(github_label)
-        h_layout.addWidget(github_icon)
+        #h_layout.addWidget(github_icon)
         layout.addLayout(h_layout)
 
         about_dialog.setLayout(layout)
