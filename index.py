@@ -152,7 +152,7 @@ class FolderCopyApp(QWidget):
         self.combo_box = QComboBox(self)
         self.open_folder_button3 = QPushButton('📁', self)        
         self.open_folder_button3.setFixedWidth(25)
-        self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box1.text(),self.combo_box.currentText())))     
+        self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box2.text(),self.combo_box.currentText())))     
         self.capa_button = QPushButton('🕛', self)
         self.capa_button.setFixedWidth(25)
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
@@ -701,7 +701,8 @@ class FolderCopyApp(QWidget):
     def get_most_recent_file(self):
         # Get a list of all files in the current directory
         #files = [f for f in os.listdir('.') if os.path.isfile(f)]
-        files = [f for f in os.listdir('.') if os.path.isfile(f) and not f.endswith('.json')]
+        files = [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.exe')]
+        #files = [f for f in os.listdir('.') if os.path.isfile(f) and not f.endswith('.json')]
         # Initialize variables to track the most recent file and its modification time
         most_recent_file = None
         most_recent_time = 0
