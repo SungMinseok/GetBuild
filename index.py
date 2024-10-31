@@ -282,7 +282,7 @@ class FolderCopyApp(QWidget):
             for folder in folders:
                 if not check_file_count :
                     temp_file_count = self.get_file_count(os.path.join(folder_path,folder))
-                    if temp_file_count < 670:
+                    if temp_file_count < 620:
                         print(f'{folder}의 파일 개수 미달로 패스 : {temp_file_count}')
                         continue
                 if len(filter_texts) != 0 :
