@@ -1,4 +1,5 @@
 import inspect
+import os
 from datetime import datetime
 
 # def log_execution(description=""):
@@ -17,6 +18,16 @@ import inspect
 from datetime import datetime
 
 def log_execution(log_level="DEBUG", description=""):
+    # Ensure the 'log' directory exists
+    log_dir = 'log'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+
+    # Construct log file path
+    log_file_path = os.path.join(log_dir, 'execute.log')
+
+
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     frame = inspect.currentframe().f_back
     function_name = frame.f_code.co_name
@@ -25,7 +36,7 @@ def log_execution(log_level="DEBUG", description=""):
     
     log_entry = f"[{current_time}] [{log_level.upper()}] [{file_name}] [{function_name}:{line_number}] - {description}\n"
     
-    with open('execute.log', 'a') as log_file:
+    with open(log_file_path, 'a') as log_file:
         log_file.write(log_entry)
         
 '''
