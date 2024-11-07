@@ -98,7 +98,9 @@ class FolderCopyApp(QWidget):
         about_action.triggered.connect(self.show_about_dialog)
         about_action1 = QAction("Report Bugs", self)
         about_action1.triggered.connect(lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues")))
-        about_menu.addActions([about_action,about_action1])
+        about_action2 = QAction("Guide", self)
+        about_action2.triggered.connect(lambda event: QDesktopServices.openUrl(QUrl("https://wiki.krafton.com/pages/viewpage.action?pageId=4926105897")))
+        about_menu.addActions([about_action,about_action1,about_action2])
 
         layout = QVBoxLayout()
         layout.setMenuBar(menu_bar)
@@ -161,7 +163,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','서버복사','서버업로드','서버패치','전체복사'])
+        self.combo_box2.addItems(['클라복사','서버복사','서버업로드','서버패치','SEL패치','전체복사'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -198,13 +200,13 @@ class FolderCopyApp(QWidget):
         # self.combo_box1 = QComboBox(self)
         # self.combo_box1.addItems(['Only Client','Only Server','All'])
         # self.combo_box1.setFixedWidth(120)
-        self.checkbox = QCheckBox('예약', self)
+        self.checkbox_reservation = QCheckBox('예약', self)
         h_layout4.addWidget(self.time_edit)
         h_layout4.addWidget(self.input_box4)
         h_layout4.addWidget(self.input_box5)
         h_layout4.addWidget(self.input_box6)
         #h_layout4.addWidget(self.combo_box1)
-        h_layout4.addWidget(self.checkbox)
+        h_layout4.addWidget(self.checkbox_reservation)
 
         # Set the layout
         layout.addLayout(h_layout1)
@@ -432,6 +434,20 @@ class FolderCopyApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
 
+    def aws_update_directly(self):
+        log_execution()
+        try:
+            target_folder = self.combo_box.currentText()
+            
+            revision = self.extract_revision_number(target_folder)
+            aws_url = self.input_box5.text()
+            branch = self.input_box6.text()
+            aws.aws_update_sel(None,revision,aws_link=aws_url,branch=branch)
+
+
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to aws_update_directly: {str(e)}')
+
     def open_folder(self, path):
         try:
             os.startfile(path)
@@ -439,12 +455,12 @@ class FolderCopyApp(QWidget):
             QMessageBox.critical(self, 'Error', 'Invalid directory.')
 
     def check_time(self):
-        if self.checkbox.isChecked():
+        if self.checkbox_reservation.isChecked():
             current_time = QTime.currentTime()
             set_time = self.time_edit.time()
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
                 self.execute_copy(refresh=True)
-                self.checkbox.setChecked(False)
+                #self.checkbox_reservation.setChecked(False)
 
     def execute_copy(self, refresh = False):
         log_execution()
@@ -464,6 +480,8 @@ class FolderCopyApp(QWidget):
             self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',False)
         elif reservation_option == "서버패치":
             self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',True)
+        elif reservation_option == "SEL패치":
+            self.aws_update_directly()
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
         if os.path.exists(self.settings_file):
@@ -507,7 +525,7 @@ class FolderCopyApp(QWidget):
         layout = QVBoxLayout()
         recent_file_name, recent_moditime = self.get_most_recent_file()
 
-        version_label = QLabel("Version: v1.0", about_dialog)
+        version_label = QLabel("Version: v1.0.2", about_dialog)
         last_update_label = QLabel(f"Last update date: {recent_moditime}", about_dialog)
         created_by_label = QLabel("Created by: mssung@pubg.com", about_dialog)
         first_production_date_label = QLabel("First production date: 2024-07-01", about_dialog)
