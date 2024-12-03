@@ -17,7 +17,7 @@ from datetime import datetime
 import inspect
 from datetime import datetime
 
-def log_execution(log_level="DEBUG", description=""):
+def log_execution(log_level="INFO", description=""):
     # Ensure the 'log' directory exists
     log_dir = 'log'
     if not os.path.exists(log_dir):
