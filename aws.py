@@ -246,6 +246,74 @@ def aws_update_sel(driver,revision,aws_link, branch = 'game'):
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/button[1]').click()
     #os.system("pause")
 
+
+def aws_update_container(driver,revision, aws_link, branch = 'game', buildType = 'DEV', isDebug = False):
+    if branch == "":
+        branch = 'game'
+
+    if driver == None :
+        driver = start_driver()
+
+        driver.implicitly_wait(10)
+        #driver.get("https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2")
+        driver.get(aws_link)
+
+
+        driver.implicitly_wait(10)
+        try:
+            driver.find_element(By.XPATH,'//*[@id="social-oidc"]').click()
+        except:
+            print('pass login...')
+            pass
+    driver.implicitly_wait(10)
+    #CONTAINER GAMESERVERS
+    driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[4]/a").click()
+    driver.implicitly_wait(5)
+    time.sleep(0.5)
+    #SELECT ALL
+    driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[1]").click()
+
+    
+    driver.implicitly_wait(5)
+    #돋보기
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[2]').click()
+    time.sleep(0.5)
+    driver.implicitly_wait(5)
+
+    #브랜치입력
+    time.sleep(1.5)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(branch)
+    time.sleep(1.5)
+    #추후 소문자/대문자 구분해서 정확히 일치하는 것 클릭하도록 변경 필요
+# /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span
+# /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span
+# /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[5]/span
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span').click()
+    time.sleep(0.5)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+    
+    #TAG 입력
+    time.sleep(1)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{branch}-{buildType}_{revision}')
+    time.sleep(1)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span').click()
+    time.sleep(0.5)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+    
+    #SELCET 클릭
+    time.sleep(0.5)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button').click()
+
+    #APPLY 클릭
+    time.sleep(0.5)
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[3]').click()
+    
+    if not isDebug :
+        #팝업 내 OK 버튼 클릭
+        time.sleep(0.5)
+        driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
+        #os.system("pause")
+
 def aws_stop():
     
     driver = jira2.start_driver()
@@ -270,22 +338,28 @@ def aws_stop():
 if __name__ == '__main__':
     
 
-    zip_path = fr'C:\mybuild\CompileBuild_DEV_game_SEL114483_158662\WindowsServer.zip'
-    aws_link = "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2"
+    # zip_path = fr'C:\mybuild\CompileBuild_DEV_game_SEL114483_158662\WindowsServer.zip'
+    # aws_link = "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2"
 
-    driver = start_driver()
+    # driver = start_driver()
 
-    driver.implicitly_wait(10)
-    #driver.get("https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2")
-    driver.get("https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2")
+    # driver.implicitly_wait(10)
+    # #driver.get("https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2")
+    # driver.get("https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2")
 
 
-    driver.implicitly_wait(10)
-    try:
-        driver.find_element(By.XPATH,'//*[@id="social-oidc"]').click()
-    except:
-        print('pass login...')
-        pass
+    # driver.implicitly_wait(10)
+    # try:
+    #     driver.find_element(By.XPATH,'//*[@id="social-oidc"]').click()
+    # except:
+    #     print('pass login...')
+    #     pass
+
+
+    
     # aws_upload_custom(driver,"157023_a",zip_path)
-    aws_update_custom(driver,"159435",aws_link=aws_link)
+    #aws_update_custom(driver,"159435",aws_link=aws_link)
+    aws_update_container(driver= None,revision=212881,aws_link='https://awsdeploy.pbb-qa.pubg.io/environment/sel-game6',branch='game',
+                         buildType='TEST',isDebug=False)
     #aws_stop()
+    os.system("pause")
