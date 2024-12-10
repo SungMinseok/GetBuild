@@ -163,7 +163,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','서버복사','서버업로드','서버패치','SEL패치','전체복사'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버업로드(구)','서버패치(구)','SEL패치(구)'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -476,11 +476,11 @@ class FolderCopyApp(QWidget):
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
         elif reservation_option == "전체복사":
             self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
-        elif reservation_option == "서버업로드":
+        elif reservation_option == "서버업로드(구)":
             self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',False)
-        elif reservation_option == "서버패치":
+        elif reservation_option == "서버패치(구)":
             self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',True)
-        elif reservation_option == "SEL패치":
+        elif reservation_option == "SEL패치(구)":
             self.aws_update_directly()
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
     def load_settings(self):
