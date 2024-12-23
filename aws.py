@@ -276,7 +276,7 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
     
     driver.implicitly_wait(5)
     #돋보기
-    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[2]').click()
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/div/button').click()
     time.sleep(0.5)
     driver.implicitly_wait(5)
 
@@ -306,7 +306,7 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
 
     #APPLY 클릭
     time.sleep(0.5)
-    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[3]').click()
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[2]').click()
     
     if not isDebug :
         #팝업 내 OK 버튼 클릭
@@ -359,7 +359,7 @@ if __name__ == '__main__':
     
     # aws_upload_custom(driver,"157023_a",zip_path)
     #aws_update_custom(driver,"159435",aws_link=aws_link)
-    aws_update_container(driver= None,revision=212881,aws_link='https://awsdeploy.pbb-qa.pubg.io/environment/sel-game6',branch='game',
-                         buildType='TEST',isDebug=False)
+    aws_update_container(driver= None,revision=213917,aws_link='https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2',branch='game',
+                         buildType='TEST',isDebug=True)
     #aws_stop()
     os.system("pause")

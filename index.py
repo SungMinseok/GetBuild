@@ -13,6 +13,8 @@ import aws
 from makelog import *
 import time
 
+
+
 class FolderCopyApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -20,6 +22,7 @@ class FolderCopyApp(QWidget):
         self.initUI()
         self.resize(700, self.height())
         self.load_settings()
+        self.isReserved = False
 
     def initUI(self):
         # Apply the custom stylesheet
@@ -448,6 +451,23 @@ class FolderCopyApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to aws_update_directly: {str(e)}')
 
+
+    def aws_update_container(self):
+        log_execution()
+        try:
+            target_folder = self.combo_box.currentText()
+            buildType = self.combo_box.currentText().split('_')[1]
+            revision = self.extract_revision_number(target_folder)
+            aws_url = self.input_box5.text()
+            branch = self.input_box6.text()
+            aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False)
+
+
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
+
+
+
     def open_folder(self, path):
         try:
             os.startfile(path)
@@ -460,7 +480,8 @@ class FolderCopyApp(QWidget):
             set_time = self.time_edit.time()
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
                 self.execute_copy(refresh=True)
-                #self.checkbox_reservation.setChecked(False)
+                self.checkbox_reservation.setChecked(False)
+                self.isReserved = True
 
     def execute_copy(self, refresh = False):
         log_execution()
@@ -470,19 +491,29 @@ class FolderCopyApp(QWidget):
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         if refresh :
             self.refresh_dropdown_revision()
+
+        build_fullname = self.combo_box.currentText()
+        buildType = build_fullname.split('_')[1]
+        #print(f'대상빌드 : {self.input_box2.text()}')
         if reservation_option == "클라복사":
-            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+            self.copy_folder(self.input_box2.text(),build_fullname,'WindowsClient')
         elif reservation_option == "서버복사":
-            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
+            self.copy_folder(self.input_box2.text(),build_fullname,'WindowsServer')
         elif reservation_option == "전체복사":
-            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'')
+            self.copy_folder(self.input_box2.text(),build_fullname,'')
+        elif reservation_option == "서버패치":
+            self.aws_update_container()
         elif reservation_option == "서버업로드(구)":
-            self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',False)
+            self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',False)
         elif reservation_option == "서버패치(구)":
-            self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer',True)
+            self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',True)
         elif reservation_option == "SEL패치(구)":
             self.aws_update_directly()
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+        if self.isReserved :
+            self.isReserved = False
+            self.checkbox_reservation.setChecked(True)
+
     def load_settings(self):
         if os.path.exists(self.settings_file):
             with open(self.settings_file, 'r') as file:
@@ -525,8 +556,9 @@ class FolderCopyApp(QWidget):
         layout = QVBoxLayout()
         recent_file_name, recent_moditime = self.get_most_recent_file()
 
-        version_label = QLabel("Version: v1.0.2", about_dialog)
-        last_update_label = QLabel(f"Last update date: {recent_moditime}", about_dialog)
+        version_label = QLabel("Version: v1.0.3", about_dialog)
+        #last_update_label = QLabel(f"Last update date: {recent_moditime}", about_dialog)
+        last_update_label = QLabel(f"Last update date: 2024-12-23", about_dialog)
         created_by_label = QLabel("Created by: mssung@pubg.com", about_dialog)
         first_production_date_label = QLabel("First production date: 2024-07-01", about_dialog)
 
