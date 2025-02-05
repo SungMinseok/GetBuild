@@ -166,7 +166,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버업로드(구)','서버패치(구)','SEL패치(구)'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버업로드(구)','서버패치(구)','SEL패치(구)','TEST'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -459,7 +459,7 @@ class FolderCopyApp(QWidget):
             buildType = self.combo_box.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
             aws_url = self.input_box5.text()
-            branch = self.input_box6.text()
+            branch = self.input_box4.text()
             aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False)
 
 
@@ -479,9 +479,10 @@ class FolderCopyApp(QWidget):
             current_time = QTime.currentTime()
             set_time = self.time_edit.time()
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
-                self.execute_copy(refresh=True)
+                
                 self.checkbox_reservation.setChecked(False)
                 self.isReserved = True
+                self.execute_copy(refresh=True)
 
     def execute_copy(self, refresh = False):
         log_execution()
@@ -509,6 +510,8 @@ class FolderCopyApp(QWidget):
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',True)
         elif reservation_option == "SEL패치(구)":
             self.aws_update_directly()
+        elif reservation_option == "TEST":
+            self.show_build_time_info()
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
         if self.isReserved :
             self.isReserved = False
