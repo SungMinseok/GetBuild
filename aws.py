@@ -288,7 +288,21 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
 # /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span
 # /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span
 # /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[5]/span
-    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span').click()
+    #driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span').click()
+        
+        # branch 값과 일치하는 요소 클릭
+    for x in range(1, 10):  # 예시: 1부터 9까지 반복
+        try:
+            element = driver.find_element(By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')
+            if element.text == branch:
+                element.click()
+                break
+        except Exception as e:
+            print(f"요소 {x} 찾기 실패: {e}")
+    
+    
+    
+    
     time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
     
@@ -313,6 +327,104 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
         time.sleep(0.5)
         driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
         #os.system("pause")
+
+
+def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildType = 'DEV'):
+    '''250204'''
+    if driver == None :
+        driver = start_driver()
+
+        driver.implicitly_wait(10)
+        #driver.get("https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2")
+        driver.get(aws_link)
+
+
+        driver.implicitly_wait(10)
+        try:
+            driver.find_element(By.XPATH,'//*[@id="social-oidc"]').click()
+        except:
+            print('pass login...')
+            pass
+    driver.implicitly_wait(10)
+
+    #CONTAINER GAMESERVERS
+    driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[4]/a").click()
+    driver.implicitly_wait(5)
+    time.sleep(0.5)
+
+    #UPLOAD CUSTOM SERVER
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/div[2]/button[3]').click()
+    time.sleep(0.5)
+    driver.implicitly_wait(5)
+
+    #Your local location
+    val_yourLocalLocation = '/html/body/div[3]/div[1]/div[2]/form/div[1]/div[2]/div/div'
+    driver.find_element(By.XPATH,val_yourLocalLocation).click()
+    driver.find_element(By.XPATH,val_yourLocalLocation).send_keys('Seoul')
+    driver.find_element(By.XPATH,val_yourLocalLocation).send_keys(Keys.RETURN)
+    time.sleep(0.5)
+    driver.implicitly_wait(5)
+
+    #Branch
+    val_branch=branch
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[2]/div[2]/div/input').send_keys(val_branch)
+    
+    #Revision
+    val_buildType = buildType
+    val_revision = revision
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[3]/div[2]/div/input').send_keys(f'{val_buildType}_{val_revision}')
+
+
+    #Input File
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[4]/div[2]/input').send_keys(zip_path)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[5]/div/button').click()
+    
+    driver.implicitly_wait(5)
+    #time.sleep(1)
+    #for i in range(0,10):
+    count = driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[6]/div/div/div[2]/span')
+    while True: 
+        progress_value = float(count.get_attribute("aria-valuenow"))
+        print(progress_value)
+        time.sleep(1)
+        if progress_value >= 100 :
+            print("커스텀 업로드 완료")
+            time.sleep(1)
+            break
+
+    #os.system("pause")
+    
+    # driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/fieldset/div/div/div[2]/div[2]/div/button').click()
+    # time.sleep(0.5)
+    
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys('CUSTOM')
+    # time.sleep(1.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
+    # time.sleep(0.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+    
+    # time.sleep(1.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(branch)
+    # time.sleep(1.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
+    # time.sleep(0.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+    
+    # time.sleep(1)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{revision}')
+    # time.sleep(1)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li/span').click()
+    # time.sleep(0.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+    
+    # time.sleep(0.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/div/div[1]/div/button').click()
+    # time.sleep(0.5)
+    # driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/fieldset/div/div/div[4]/div/button').click()
+    # time.sleep(0.5)
+    # driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/button[1]').click()
+    # #os.system("pause")
+
 
 def aws_stop():
     
@@ -355,11 +467,12 @@ if __name__ == '__main__':
     #     print('pass login...')
     #     pass
 
-
+    aws_link = "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game5"
     
     # aws_upload_custom(driver,"157023_a",zip_path)
     #aws_update_custom(driver,"159435",aws_link=aws_link)
-    aws_update_container(driver= None,revision=213917,aws_link='https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2',branch='game',
-                         buildType='TEST',isDebug=True)
+    #aws_update_container(driver= None,revision=213917,aws_link='https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2',branch='game',
+    #                     buildType='TEST',isDebug=True)
     #aws_stop()
+    #aws_upload_custom2(driver=None,revision="252251",zip_path,aws_link=aws_link,branch='stage_coreloop')
     os.system("pause")
