@@ -3,7 +3,7 @@ import os
 import shutil
 import json
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox, QLabel, QMenuBar, QAction, QDialog)
+                             QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox, QLabel, QMenuBar, QAction, QDialog, QTextEdit)
 from PyQt5.QtCore import (Qt, QTime, QTimer, QUrl, QDateTime)
 from PyQt5.QtGui import QPixmap, QDesktopServices, QIcon
 import zipfile
@@ -20,7 +20,7 @@ class FolderCopyApp(QWidget):
         super().__init__()
         self.settings_file = 'settings.json'
         self.initUI()
-        self.resize(700, self.height())
+        self.resize(850, self.height())
         self.load_settings()
         self.isReserved = False
 
@@ -114,6 +114,7 @@ class FolderCopyApp(QWidget):
         h_layout2_1 = QHBoxLayout()
         h_layout3 = QHBoxLayout()
         h_layout4 = QHBoxLayout()
+        h_layout5 = QHBoxLayout()
 
         # First row
         self.input_box1 = QLineEdit(self)
@@ -154,7 +155,8 @@ class FolderCopyApp(QWidget):
         # h_layout2_1.addWidget(self.folder_button2_1)
 
         # Third row
-        self.combo_box = QComboBox(self)
+        self.combo_box = QComboBox(self)#
+        self.combo_box.currentTextChanged.connect(self.update_window_title)
         self.open_folder_button3 = QPushButton('📁', self)        
         self.open_folder_button3.setFixedWidth(25)
         self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box2.text(),self.combo_box.currentText())))     
@@ -166,7 +168,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버업로드(구)','서버패치(구)','SEL패치(구)','TEST'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버업로드','서버패치(구)','SEL패치(구)','TEST'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -194,12 +196,12 @@ class FolderCopyApp(QWidget):
         self.time_edit.setDisplayFormat("HH:mm")
         self.input_box4 = QLineEdit(self)
         self.input_box4.setPlaceholderText('빌드명 포함 스트링(;로 구분)')
-        self.input_box4.setFixedWidth(100)
+        self.input_box4.setFixedWidth(120)
         self.input_box5 = QLineEdit(self)
         self.input_box5.setPlaceholderText('AWS 주소')
         self.input_box6 = QLineEdit(self)
         self.input_box6.setPlaceholderText('branch')
-        self.input_box6.setFixedWidth(80)
+        self.input_box6.setFixedWidth(120)
         # self.combo_box1 = QComboBox(self)
         # self.combo_box1.addItems(['Only Client','Only Server','All'])
         # self.combo_box1.setFixedWidth(120)
@@ -211,12 +213,18 @@ class FolderCopyApp(QWidget):
         #h_layout4.addWidget(self.combo_box1)
         h_layout4.addWidget(self.checkbox_reservation)
 
+        # row 5
+        self.textarea0 = QTextEdit(self)
+        h_layout5.addWidget(self.textarea0)
+
+
         # Set the layout
         layout.addLayout(h_layout1)
         layout.addLayout(h_layout2)
         layout.addLayout(h_layout2_1)
         layout.addLayout(h_layout3)
         layout.addLayout(h_layout4)
+        layout.addLayout(h_layout5)
         self.setLayout(layout)
 
 
@@ -378,6 +386,7 @@ class FolderCopyApp(QWidget):
         src_folder = self.input_box1.text()
         #src_folder = 'c:/source'
         client_folder = self.combo_box.currentText()
+        buildType = self.combo_box.currentText().split('_')[1]
         folder_to_zip = os.path.join(src_folder, target_folder, target_name)
 
         if not os.path.isdir(src_folder):
@@ -431,7 +440,7 @@ class FolderCopyApp(QWidget):
             revision = self.extract_revision_number(target_folder)
             aws_url = self.input_box5.text()
             branch = self.input_box6.text()
-            aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url,branch=branch)
+            aws.aws_upload_custom2(None,revision,zip_file,aws_link=aws_url,branch=branch,buildType=buildType)
             if(update):
                 aws.aws_update_custom(None,revision,aws_url,branch=branch)
         except Exception as e:
@@ -504,7 +513,7 @@ class FolderCopyApp(QWidget):
             self.copy_folder(self.input_box2.text(),build_fullname,'')
         elif reservation_option == "서버패치":
             self.aws_update_container()
-        elif reservation_option == "서버업로드(구)":
+        elif reservation_option == "서버업로드":
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',False)
         elif reservation_option == "서버패치(구)":
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',True)
@@ -781,6 +790,17 @@ class FolderCopyApp(QWidget):
             return most_recent_file, most_recent_time_readable
         else:
             return None, None
+        
+    def update_window_title(self):
+        try:
+            target_folder = self.combo_box.currentText()
+            buildType = self.combo_box.currentText().split('_')[1]
+            revision = self.extract_revision_number(target_folder)
+            aws_url = self.input_box5.text()
+            branch = self.input_box4.text()
+            self.setWindowTitle(f'{branch}-{buildType}_{revision}')
+        except:
+            pass
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
