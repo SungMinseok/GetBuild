@@ -426,6 +426,36 @@ def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildT
     # #os.system("pause")
 
 
+def aws_delete(driver,revision,zip_path,aws_links):
+    '''250220'''
+    if driver == None :
+        driver = start_driver()
+        driver.implicitly_wait(10)
+        driver.get(aws_link)
+
+
+        driver.implicitly_wait(10)
+        try:
+            driver.find_element(By.XPATH,'//*[@id="social-oidc"]').click()
+        except:
+            print('pass login...')
+            pass
+    driver.implicitly_wait(10)
+
+    for i in range(0,len(aws_link)):
+
+        #CONTAINER GAMESERVERS
+        driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[4]/a").click()
+        driver.implicitly_wait(5)
+        time.sleep(0.5)
+
+        #Select all
+        driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[1]").click()
+        time.sleep(0.5)
+        driver.implicitly_wait(5)
+
+
+
 def aws_stop():
     
     driver = jira2.start_driver()
