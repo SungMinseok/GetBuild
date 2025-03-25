@@ -13,7 +13,15 @@ import aws
 from makelog import *
 import time
 
-
+servers = [
+    "sel-game-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-game2-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-game3-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-game4-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-game5-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-game6-unrealclientproxy.pbb-qa.pubg.io:443",
+    "10.160.2.239:5259"
+]
 
 class FolderCopyApp(QWidget):
     def __init__(self):
@@ -168,7 +176,7 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버업로드','서버패치(구)','SEL패치(구)','TEST'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
         self.combo_box2.setFixedWidth(120)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -348,19 +356,22 @@ class FolderCopyApp(QWidget):
             self.progress_dialog.setWindowModality(Qt.WindowModal)
             self.progress_dialog.setValue(0)
 
+            src_file = os.path.join(root, file)
+            rel_path = os.path.relpath(root, folder_to_copy)
+            dest_dir = os.path.join(dest_path, rel_path)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+            #dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
+            self.generate_backend_bat_files(servers,dest_path)
+            
             for root, dirs, files in os.walk(folder_to_copy):
                 for file in files:
                     if self.progress_dialog.wasCanceled():
                         QMessageBox.information(self, 'Cancelled', 'Copying cancelled.')
                         return
 
-                    src_file = os.path.join(root, file)
-                    rel_path = os.path.relpath(root, folder_to_copy)
-                    dest_dir = os.path.join(dest_path, rel_path)
-                    if not os.path.exists(dest_dir):
-                        os.makedirs(dest_dir)
                     shutil.copy(src_file, dest_dir)
-                    
+                                
                     # Update progress
                     progress = (files.index(file) + 1) / len(files) * 100
                     self.progress_dialog.setValue(int(progress))
@@ -520,7 +531,8 @@ class FolderCopyApp(QWidget):
         elif reservation_option == "SEL패치(구)":
             self.aws_update_directly()
         elif reservation_option == "TEST":
-            self.show_build_time_info()
+            self.execute_test()
+            #self.show_build_time_info()
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
         if self.isReserved :
             self.isReserved = False
@@ -801,6 +813,38 @@ class FolderCopyApp(QWidget):
             self.setWindowTitle(f'{branch}-{buildType}_{revision}')
         except:
             pass
+
+    def toggle_layouts(self, target):
+        if target.isVisible():
+            target.hide()
+        else:
+            target.show()
+
+            
+
+    def generate_backend_bat_files(self,server_list, output_dir="."):
+        """
+        주어진 서버 주소 리스트를 기반으로 .bat 파일을 생성합니다.
+
+        :param server_list: 백엔드 서버 주소 리스트 (예: ['10.160.2.239:5259', 'sel-game-unrealclientproxy.pbb-qa.pubg.io:443'])
+        :param output_dir: bat 파일이 저장될 디렉토리 (기본: 현재 디렉토리)
+        :param client_path: 실행할 클라이언트 경로 (기본: WindowsClient\Client.exe)
+        """
+        base_command = f'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
+
+        for server in server_list:
+            sanitized_name = server.replace(":", "_").replace(".", "_")
+            bat_filename = f"{sanitized_name}.bat"
+            full_path = os.path.join(output_dir, bat_filename)
+
+            with open(full_path, "w", encoding="utf-8") as f:
+                command = f'{base_command} -Backend="{server}" -Backend_ssl=yes -Backend_root_cert=""'
+                f.write(command)
+            print(f"BAT 파일 생성됨: {full_path}")
+
+    def execute_test(self):
+        dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
+        self.generate_backend_bat_files(servers,dest_path)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
