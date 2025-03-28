@@ -13,6 +13,8 @@ import aws
 from makelog import *
 import time
 
+
+
 servers = [
     "sel-game-unrealclientproxy.pbb-qa.pubg.io:443",
     "sel-game2-unrealclientproxy.pbb-qa.pubg.io:443",
@@ -349,6 +351,11 @@ class FolderCopyApp(QWidget):
         if not os.path.isdir(folder_to_copy):
             QMessageBox.critical(self, 'Error', f'{folder_to_copy} does not exist.')
             return
+        
+        main_path = os.path.join(dest_folder, target_folder)
+        if not os.path.exists(main_path):
+            os.makedirs(main_path)
+        self.generate_backend_bat_files(servers,main_path)
 
         try:
             dest_path = os.path.join(dest_folder, target_folder, target_name)
@@ -356,20 +363,19 @@ class FolderCopyApp(QWidget):
             self.progress_dialog.setWindowModality(Qt.WindowModal)
             self.progress_dialog.setValue(0)
 
-            src_file = os.path.join(root, file)
-            rel_path = os.path.relpath(root, folder_to_copy)
-            dest_dir = os.path.join(dest_path, rel_path)
-            if not os.path.exists(dest_dir):
-                os.makedirs(dest_dir)
             #dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
-            self.generate_backend_bat_files(servers,dest_path)
-            
+
             for root, dirs, files in os.walk(folder_to_copy):
                 for file in files:
                     if self.progress_dialog.wasCanceled():
                         QMessageBox.information(self, 'Cancelled', 'Copying cancelled.')
                         return
 
+                    src_file = os.path.join(root, file)
+                    rel_path = os.path.relpath(root, folder_to_copy)
+                    dest_dir = os.path.join(dest_path, rel_path)
+                    if not os.path.exists(dest_dir):
+                        os.makedirs(dest_dir)
                     shutil.copy(src_file, dest_dir)
                                 
                     # Update progress
