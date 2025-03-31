@@ -48,6 +48,10 @@ def create_git_tag(tag_name):
     run_git_command(["git", "tag", tag_name])
     run_git_command(["git", "push", "origin", tag_name])
 
+def get_uncommitted_file_list():
+    output = run_git_command(["git", "status", "--porcelain"])
+    lines = output.strip().splitlines()
+    return [line[3:] for line in lines if line.strip()]
 # ===== GitHub API =====
 def get_latest_release():
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
@@ -110,7 +114,14 @@ def main():
         return
 
     if not check_clean_working_directory():
-        show_popup("업로드 취소됨", "로컬에 커밋되지 않은 변경사항이 존재합니다.\n업로드를 중단합니다.")
+        changed_files = get_uncommitted_file_list()
+        file_list = "\n".join(changed_files)
+        message = (
+            "로컬에 커밋되지 않은 변경사항이 존재합니다.\n"
+            "업로드를 중단합니다.\n\n"
+            f"[변경된 파일 목록]\n{file_list}"
+        )
+        show_popup("업로드 취소됨", message)
         return
 
     with open("version.txt", "r") as f:
