@@ -4,11 +4,13 @@ import sys
 import tkinter as tk
 from tkinter import messagebox
 import requests
-from dotenv import load_dotenv
-load_dotenv()
+import json
+
+with open("config.json", "r") as f:
+    config = json.load(f)
 
 # 설정
-GITHUB_TOKEN = os.getenv("token")
+GITHUB_TOKEN = config.get("token")
 REPO_OWNER = "SungMinseok"
 REPO_NAME = "GetBuild"
 FILE_PATH = "QuickBuild.zip"
