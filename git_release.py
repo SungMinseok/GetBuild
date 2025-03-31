@@ -6,16 +6,16 @@ from tkinter import messagebox
 import requests
 import json
 
+# ────── 설정 로딩 ──────
 with open("config.json", "r") as f:
     config = json.load(f)
 
-# 설정
 GITHUB_TOKEN = config.get("token")
 REPO_OWNER = "SungMinseok"
 REPO_NAME = "GetBuild"
 FILE_PATH = "QuickBuild.zip"
 
-# ===== UI & Git =====
+# ────── UI ──────
 def show_popup(title, message):
     root = tk.Tk()
     root.withdraw()
@@ -31,6 +31,7 @@ def ask_release_type():
         "아니오 (No): 기존 릴리스 zip 삭제 후 덮어쓰기 (태그는 새로 생성)"
     )
 
+# ────── Git 관련 ──────
 def run_git_command(args):
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
@@ -41,18 +42,33 @@ def run_git_command(args):
 def check_clean_working_directory():
     return run_git_command(["git", "status", "--porcelain"]).strip() == ""
 
-def get_current_commit_sha():
-    return run_git_command(["git", "rev-parse", "HEAD"])
+def get_uncommitted_file_list():
+    output = run_git_command(["git", "status", "--porcelain"])
+    lines = output.strip().splitlines()
+    return [line[2:].strip() for line in lines if line.strip()]
+
+def get_git_version_txt():
+    try:
+        result = subprocess.run(["git", "show", "HEAD:version.txt"],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
+        return result.stdout.strip() if result.returncode == 0 else None
+    except Exception:
+        return None
+
+def auto_commit_version_txt(old_version, new_version):
+    commit_msg = f"version.txt 업데이트: {old_version or 'N/A'} → {new_version}"
+    run_git_command(["git", "add", "version.txt"])
+    run_git_command(["git", "commit", "-m", commit_msg])
+    run_git_command(["git", "push"])
+    show_popup("자동 커밋 완료", commit_msg)
 
 def create_git_tag(tag_name):
     run_git_command(["git", "tag", tag_name])
     run_git_command(["git", "push", "origin", tag_name])
 
-def get_uncommitted_file_list():
-    output = run_git_command(["git", "status", "--porcelain"])
-    lines = output.strip().splitlines()
-    return [line[3:] for line in lines if line.strip()]
-# ===== GitHub API =====
+# ────── GitHub API ──────
 def get_latest_release():
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
@@ -107,40 +123,51 @@ def upload_file_to_release(release_id, file_path):
         show_popup("업로드 실패", res.text)
         sys.exit(1)
 
-# ===== Main Logic =====
+# ────── Main Logic ──────
 def main():
     if not os.path.exists(FILE_PATH):
         show_popup("에러", f"{FILE_PATH} 파일이 존재하지 않습니다.")
         return
 
+    # 커밋되지 않은 파일 체크
     if not check_clean_working_directory():
         changed_files = get_uncommitted_file_list()
-        file_list = "\n".join(changed_files)
-        message = (
-            "로컬에 커밋되지 않은 변경사항이 존재합니다.\n"
-            "업로드를 중단합니다.\n\n"
-            f"[변경된 파일 목록]\n{file_list}"
-        )
-        show_popup("업로드 취소됨", message)
-        return
+        if changed_files == ["version.txt"]:
+            old_version = get_git_version_txt()
+            with open("version.txt", "r") as f:
+                new_version = f.read().strip()
+            auto_commit_version_txt(old_version, new_version)
+        else:
+            file_list = "\n".join(changed_files)
+            message = (
+                "로컬에 커밋되지 않은 변경사항이 존재합니다.\n"
+                "업로드를 중단합니다.\n\n"
+                f"[변경된 파일 목록]\n{file_list}"
+            )
+            show_popup("업로드 취소됨", message)
+            return
 
+    # version 및 changelog 로딩
     with open("version.txt", "r") as f:
         version = f.read().strip()
 
+    changelog_text = "(no changelog)"
+    if os.path.exists("changelog.txt"):
+        with open("changelog.txt", "r", encoding="utf-8") as f:
+            changelog_text = f.read().strip()
+
+    # 릴리스 선택
     is_full_release = ask_release_type()
 
     if is_full_release:
-        # 새 릴리스 생성 (버전 기반 태그)
         create_git_tag(version)
-        release_id = create_release(version, f"Release {version}")
+        release_id = create_release(version, f"Release {version}", body=changelog_text)
         upload_file_to_release(release_id, FILE_PATH)
     else:
-        # 기존 최신 릴리스에 asset 삭제 + 재업로드, 단 태그는 새로 생성
         latest = get_latest_release()
         if not latest:
             show_popup("에러", "최신 릴리스를 불러오지 못했습니다.")
             return
-
         release_id = latest["id"]
         delete_existing_asset(release_id, os.path.basename(FILE_PATH))
         upload_file_to_release(release_id, FILE_PATH)
