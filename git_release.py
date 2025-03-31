@@ -4,6 +4,8 @@ import sys
 import tkinter as tk
 from tkinter import messagebox
 import requests
+from dotenv import load_dotenv
+load_dotenv()
 
 # 설정
 GITHUB_TOKEN = os.getenv("token")
