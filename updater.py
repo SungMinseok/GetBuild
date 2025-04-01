@@ -5,7 +5,12 @@ import time
 import subprocess
 import shutil
 import tkinter as tk
+from datetime import datetime
 from tkinter import messagebox
+import sys
+
+def is_silent_mode():
+    return "--silent" in sys.argv
 
 # 설정
 VERSION_FILE = "version.txt"
@@ -14,12 +19,18 @@ ZIP_URL = "https://github.com/SungMinseok/GetBuild/releases/latest/download/Quic
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/SungMinseok/GetBuild/main/version.txt"
 TEMP_DIR = "update_temp"
 
-# 메시지 박스 초기화용
+# ───── 메시지 창 ─────
 def show_message(title, message):
     root = tk.Tk()
     root.withdraw()
     messagebox.showinfo(title, message)
 
+def ask_yes_no(title, message):
+    root = tk.Tk()
+    root.withdraw()
+    return messagebox.askyesno(title, message)
+
+# ───── 버전 로딩 ─────
 def get_local_version():
     if os.path.exists(VERSION_FILE):
         with open(VERSION_FILE, "r") as f:
@@ -34,6 +45,7 @@ def get_remote_version():
         show_message("업데이트 실패", f"원격 버전 정보를 불러오는 데 실패했습니다:\n{e}")
         return None
 
+# ───── 업데이트 로직 ─────
 def download_zip():
     try:
         os.makedirs(TEMP_DIR, exist_ok=True)
@@ -59,33 +71,62 @@ def kill_app():
         pass
 
 def replace_files():
+    current_exe = os.path.basename(__file__)
     for root, dirs, files in os.walk(TEMP_DIR):
         for file in files:
+            # 실행 중인 updater 자신은 복사 제외
+            if file.lower() == current_exe.lower():
+                print(f"[SKIP] 자기 자신 복사 제외: {file}")
+                continue
             src_path = os.path.join(root, file)
             rel_path = os.path.relpath(src_path, TEMP_DIR)
             dst_path = os.path.join(".", rel_path)
             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-            shutil.copy2(src_path, dst_path)
+            try:
+                shutil.copy2(src_path, dst_path)
+            except PermissionError:
+                print(f"[SKIP] 사용 중인 파일 복사 실패: {dst_path}")
 
 def run_app():
     subprocess.Popen([APP_NAME], shell=True)
 
 def clean_up():
-    zip_path = os.path.join("QuickBuild.zip")
+    zip_path = os.path.join(TEMP_DIR, "QuickBuild.zip")
     if os.path.exists(zip_path):
         os.remove(zip_path)
     shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
+
+
+def parse_version_date(version_str):
+    try:
+        parts = version_str.split("-")
+        if len(parts) != 3:
+            return None
+        date_str = parts[1]
+        time_str = parts[2]
+        return datetime.strptime(f"{date_str}-{time_str}", "%Y.%m.%d-%H%M")
+    except Exception:
+        return None
+
+def is_remote_newer(local_version, remote_version):
+    local_dt = parse_version_date(local_version)
+    remote_dt = parse_version_date(remote_version)
+    if not local_dt or not remote_dt:
+        return False  # 비교 불가하면 업데이트 안함
+    return remote_dt > local_dt
+
+# ───── 메인 진입점 ─────
 def main():
     quickbuild_exists = os.path.exists(APP_NAME)
     local_version = get_local_version() if quickbuild_exists else None
     remote_version = get_remote_version()
 
     if not remote_version:
-        return  # 오류 메시지는 위에서 이미 출력됨
+        return  # 오류 메시지는 이미 출력됨
 
+    # 1️⃣ QuickBuild가 아예 없는 경우 → 설치
     if not quickbuild_exists:
-        # 최초 설치
         zip_path = download_zip()
         if not zip_path: return
         extract_zip(zip_path)
@@ -95,11 +136,26 @@ def main():
         run_app()
         return
 
-    if local_version == remote_version:
-        show_message("업데이트 불필요", "이미 최신 버전입니다.")
+    # 2️⃣ 최신 버전과 비교
+    if not is_remote_newer(local_version, remote_version):
+        if not is_silent_mode():
+            # Silent 모드가 아닐 때만 메시지 출력
+            # Silent 모드에서는 업데이트 확인만 하고 종료
+            show_message(
+                "업데이트 불필요",
+                f"이미 최신 버전입니다.\n\n현재 버전: {local_version}\n최신 버전: {remote_version}"
+            )
+            return
+
+    # 3️⃣ 업데이트 여부 팝업 확인
+    user_confirmed = ask_yes_no(
+        "업데이트 확인",
+        f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
+    )
+    if not user_confirmed:
         return
 
-    # 업데이트
+    # 4️⃣ 업데이트 수행
     zip_path = download_zip()
     if not zip_path: return
     extract_zip(zip_path)

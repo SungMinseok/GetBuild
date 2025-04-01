@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import aws
 from makelog import *
 import time
+import subprocess
 
 
 
@@ -853,6 +854,7 @@ class FolderCopyApp(QWidget):
         self.generate_backend_bat_files(servers,dest_path)
 
 if __name__ == '__main__':
+    subprocess.call(["QuickBuild_updater.exe", "--silent"])  # ← 추가
     app = QApplication(sys.argv)
     ex = FolderCopyApp()
     sys.exit(app.exec_())
