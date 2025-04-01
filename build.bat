@@ -26,7 +26,7 @@ if exist QuickBuild.zip del QuickBuild.zip
 REM === [5] zip 생성 ===
 echo [INFO] Creating new QuickBuild.zip file...
 
-powershell Compress-Archive -Path dist\QuickBuild_updater.exe, dist\QuickBuild.exe, version.txt, ico.ico, qss -DestinationPath QuickBuild.zip
+powershell Compress-Archive -Path dist\QuickBuild.exe, version.txt, ico.ico, qss -DestinationPath QuickBuild.zip
 
 echo [INFO] Done. Final version: %VERSION_STR%
 pause
