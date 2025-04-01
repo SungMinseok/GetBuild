@@ -1,25 +1,25 @@
 import os
+import sys
 import requests
 import zipfile
 import time
 import subprocess
 import shutil
 import tkinter as tk
-from datetime import datetime
 from tkinter import messagebox
-import sys
+from datetime import datetime
 
-def is_silent_mode():
-    return "--silent" in sys.argv
-
-# 설정
+# ───── 설정 ─────
 VERSION_FILE = "version.txt"
 APP_NAME = "QuickBuild.exe"
 ZIP_URL = "https://github.com/SungMinseok/GetBuild/releases/latest/download/QuickBuild.zip"
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/SungMinseok/GetBuild/main/version.txt"
 TEMP_DIR = "update_temp"
 
-# ───── 메시지 창 ─────
+# ───── 유틸 ─────
+def is_silent_mode():
+    return "--silent" in sys.argv
+
 def show_message(title, message):
     root = tk.Tk()
     root.withdraw()
@@ -30,7 +30,6 @@ def ask_yes_no(title, message):
     root.withdraw()
     return messagebox.askyesno(title, message)
 
-# ───── 버전 로딩 ─────
 def get_local_version():
     if os.path.exists(VERSION_FILE):
         with open(VERSION_FILE, "r") as f:
@@ -42,8 +41,27 @@ def get_remote_version():
         r = requests.get(REMOTE_VERSION_URL, timeout=5)
         return r.text.strip()
     except Exception as e:
-        show_message("업데이트 실패", f"원격 버전 정보를 불러오는 데 실패했습니다:\n{e}")
+        if not is_silent_mode():
+            show_message("업데이트 실패", f"원격 버전 정보를 불러오는 데 실패했습니다:\n{e}")
         return None
+
+def parse_version_date(version_str):
+    try:
+        parts = version_str.split("-")
+        if len(parts) != 3:
+            return None
+        date_str = parts[1]
+        time_str = parts[2]
+        return datetime.strptime(f"{date_str}-{time_str}", "%Y.%m.%d-%H%M")
+    except Exception:
+        return None
+
+def is_remote_newer(local_version, remote_version):
+    local_dt = parse_version_date(local_version)
+    remote_dt = parse_version_date(remote_version)
+    if not local_dt or not remote_dt:
+        return False
+    return remote_dt > local_dt
 
 # ───── 업데이트 로직 ─────
 def download_zip():
@@ -56,7 +74,8 @@ def download_zip():
                     f.write(chunk)
         return zip_path
     except Exception as e:
-        show_message("다운로드 실패", f"업데이트 파일 다운로드 중 오류 발생:\n{e}")
+        if not is_silent_mode():
+            show_message("다운로드 실패", f"업데이트 파일 다운로드 중 오류 발생:\n{e}")
         return None
 
 def extract_zip(zip_path):
@@ -74,7 +93,6 @@ def replace_files():
     current_exe = os.path.basename(__file__)
     for root, dirs, files in os.walk(TEMP_DIR):
         for file in files:
-            # 실행 중인 updater 자신은 복사 제외
             if file.lower() == current_exe.lower():
                 print(f"[SKIP] 자기 자신 복사 제외: {file}")
                 continue
@@ -96,26 +114,6 @@ def clean_up():
         os.remove(zip_path)
     shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
-
-
-def parse_version_date(version_str):
-    try:
-        parts = version_str.split("-")
-        if len(parts) != 3:
-            return None
-        date_str = parts[1]
-        time_str = parts[2]
-        return datetime.strptime(f"{date_str}-{time_str}", "%Y.%m.%d-%H%M")
-    except Exception:
-        return None
-
-def is_remote_newer(local_version, remote_version):
-    local_dt = parse_version_date(local_version)
-    remote_dt = parse_version_date(remote_version)
-    if not local_dt or not remote_dt:
-        return False  # 비교 불가하면 업데이트 안함
-    return remote_dt > local_dt
-
 # ───── 메인 진입점 ─────
 def main():
     quickbuild_exists = os.path.exists(APP_NAME)
@@ -123,9 +121,9 @@ def main():
     remote_version = get_remote_version()
 
     if not remote_version:
-        return  # 오류 메시지는 이미 출력됨
+        return
 
-    # 1️⃣ QuickBuild가 아예 없는 경우 → 설치
+    # 신규 설치
     if not quickbuild_exists:
         zip_path = download_zip()
         if not zip_path: return
@@ -136,26 +134,25 @@ def main():
         run_app()
         return
 
-    # 2️⃣ 최신 버전과 비교
+    # 최신 여부 확인
     if not is_remote_newer(local_version, remote_version):
         if not is_silent_mode():
-            # Silent 모드가 아닐 때만 메시지 출력
-            # Silent 모드에서는 업데이트 확인만 하고 종료
             show_message(
                 "업데이트 불필요",
                 f"이미 최신 버전입니다.\n\n현재 버전: {local_version}\n최신 버전: {remote_version}"
             )
-            return
-
-    # 3️⃣ 업데이트 여부 팝업 확인
-    user_confirmed = ask_yes_no(
-        "업데이트 확인",
-        f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
-    )
-    if not user_confirmed:
         return
 
-    # 4️⃣ 업데이트 수행
+    # 업데이트할지 확인 (silent 모드는 바로 실행)
+    else:
+        do_update = ask_yes_no(
+            "업데이트 확인",
+            f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
+        )
+        if not do_update:
+            return
+
+    # 업데이트 실행
     zip_path = download_zip()
     if not zip_path: return
     extract_zip(zip_path)
