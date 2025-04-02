@@ -246,7 +246,6 @@ def aws_update_sel(driver,revision,aws_link, branch = 'game'):
     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/button[1]').click()
     #os.system("pause")
 
-
 def aws_update_container(driver,revision, aws_link, branch = 'game', buildType = 'DEV', isDebug = False):
     if branch == "":
         branch = 'game'
@@ -313,6 +312,12 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span').click()
     time.sleep(0.5)
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+
+    #Build config 체크박스 클릭
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]').click()
+    time.sleep(0.5)
+    driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+
     
     #SELCET 클릭
     time.sleep(0.5)
@@ -320,7 +325,7 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
 
     #APPLY 클릭
     time.sleep(0.5)
-    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[2]').click()
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[3]').click()
     
     if not isDebug :
         #팝업 내 OK 버튼 클릭
