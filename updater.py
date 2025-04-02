@@ -109,13 +109,13 @@ def run_app():
     subprocess.Popen([APP_NAME], shell=True)
 
 def clean_up():
-    zip_path = os.path.join(TEMP_DIR, "QuickBuild.zip")
+    zip_path = os.path.join("QuickBuild.zip")
     if os.path.exists(zip_path):
         os.remove(zip_path)
     shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
 # ───── 메인 진입점 ─────
-def main():
+def main(isDirect = True):
     quickbuild_exists = os.path.exists(APP_NAME)
     local_version = get_local_version() if quickbuild_exists else None
     remote_version = get_remote_version()
@@ -131,12 +131,12 @@ def main():
         replace_files()
         clean_up()
         show_message("설치 완료", "QuickBuild가 성공적으로 설치되었습니다.")
-        run_app()
+        #run_app()
         return
 
     # 최신 여부 확인
     if not is_remote_newer(local_version, remote_version):
-        if not is_silent_mode():
+        if isDirect:
             show_message(
                 "업데이트 불필요",
                 f"이미 최신 버전입니다.\n\n현재 버전: {local_version}\n최신 버전: {remote_version}"
