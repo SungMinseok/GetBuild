@@ -23,12 +23,16 @@ def is_silent_mode():
 def show_message(title, message):
     root = tk.Tk()
     root.withdraw()
+    root.attributes("-topmost", True)  # 👈 핵심
     messagebox.showinfo(title, message)
-
+    root.destroy()
 def ask_yes_no(title, message):
     root = tk.Tk()
     root.withdraw()
-    return messagebox.askyesno(title, message)
+    root.attributes("-topmost", True)
+    result = messagebox.askyesno(title, message)
+    root.destroy()
+    return result
 
 def get_local_version():
     if os.path.exists(VERSION_FILE):
@@ -39,7 +43,9 @@ def get_local_version():
 def get_remote_version():
     try:
         r = requests.get(REMOTE_VERSION_URL, timeout=5)
-        return r.text.strip()
+        remote_version = r.text.strip()
+        print(remote_version)
+        return remote_version
     except Exception as e:
         if not is_silent_mode():
             show_message("업데이트 실패", f"원격 버전 정보를 불러오는 데 실패했습니다:\n{e}")
