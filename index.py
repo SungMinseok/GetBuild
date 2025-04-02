@@ -26,12 +26,14 @@ servers = [
     "10.160.2.239:5259"
 ]
 
+
 class FolderCopyApp(QWidget):
     def __init__(self):
         super().__init__()
         self.settings_file = 'settings.json'
         self.initUI()
         self.resize(850, self.height())
+        self.first_size = self.width(), self.height()
         self.load_settings()
         self.isReserved = False
 
@@ -124,38 +126,46 @@ class FolderCopyApp(QWidget):
         h_layout2 = QHBoxLayout()
         h_layout2_1 = QHBoxLayout()
         h_layout3 = QHBoxLayout()
+        h_layout3_1 = QHBoxLayout()
         h_layout4 = QHBoxLayout()
-        h_layout5 = QHBoxLayout()
+        h_layout5 = QVBoxLayout()
 
         # First row
+        self.new_label_1 = QLabel('빌드 소스 경로', self)
+        self.new_label_1.setFixedWidth(120)
+        #print(self.new_label_1.width())
         self.input_box1 = QLineEdit(self)
         self.input_box1.setText(fr'\\pubg-pds\PBB\Builds')
-        self.open_folder_button1 = QPushButton('📁', self)        
+        self.open_folder_button1 = QPushButton('📂', self)        
         self.open_folder_button1.setFixedWidth(25)
         self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.input_box1.text()))       
-        self.folder_button1 = QPushButton('PDS 경로 설정', self)
+        self.folder_button1 = QPushButton('...', self)
         #self.folder_button1.setFixedWidth(120)
-        self.folder_button1.setFixedWidth(186)
+        self.folder_button1.setFixedWidth(25)
         self.folder_button1.clicked.connect(lambda: self.choose_folder(self.input_box1))
         # self.open_folder_button1 = QPushButton('OPEN', self)        
         # self.open_folder_button1.setFixedWidth(60)
         # self.open_folder_button1.clicked.connect(self.open_folder1)
+        h_layout1.addWidget(self.new_label_1)
         h_layout1.addWidget(self.input_box1)
-        h_layout1.addWidget(self.open_folder_button1)
         h_layout1.addWidget(self.folder_button1)
+        h_layout1.addWidget(self.open_folder_button1)
         #h_layout1.addWidget(self.open_folder_button1)
 
         # Second row
+        self.new_label_2 = QLabel('로컬 저장 경로', self)
+        self.new_label_2.setFixedWidth(120)
         self.input_box2 = QLineEdit(self)
-        self.open_folder_button2 = QPushButton('📁', self)        
+        self.open_folder_button2 = QPushButton('📂', self)        
         self.open_folder_button2.setFixedWidth(25)
         self.open_folder_button2.clicked.connect(lambda: self.open_folder(self.input_box2.text()))      
-        self.folder_button2 = QPushButton('로컬 경로 설정', self)        
-        self.folder_button2.setFixedWidth(186)
+        self.folder_button2 = QPushButton('...', self)        
+        self.folder_button2.setFixedWidth(25)
         self.folder_button2.clicked.connect(lambda: self.choose_folder(self.input_box2))
+        h_layout2.addWidget(self.new_label_2)
         h_layout2.addWidget(self.input_box2)
-        h_layout2.addWidget(self.open_folder_button2)
         h_layout2.addWidget(self.folder_button2)
+        h_layout2.addWidget(self.open_folder_button2)
 
         # Additional second row
         # self.input_box2_1 = QLineEdit(self)
@@ -166,24 +176,44 @@ class FolderCopyApp(QWidget):
         # h_layout2_1.addWidget(self.folder_button2_1)
 
         # Third row
+        self.new_label_3 = QLabel('빌드명', self)
+        self.new_label_3.setFixedWidth(120)
+        self.input_box4 = QLineEdit(self)
+        self.input_box4.setPlaceholderText('스트링필터(;로 구분)')
+        self.input_box4.setFixedWidth(200)
         self.combo_box = QComboBox(self)#
         self.combo_box.currentTextChanged.connect(self.update_window_title)
-        self.open_folder_button3 = QPushButton('📁', self)        
+        self.open_folder_button3 = QPushButton('📂', self)        
         self.open_folder_button3.setFixedWidth(25)
         self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box2.text(),self.combo_box.currentText())))     
-        self.capa_button = QPushButton('🕛', self)
+        self.capa_button = QPushButton('ℹ️', self)
         self.capa_button.setFixedWidth(25)
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
-        self.refresh_button = QPushButton('↺', self)
+        self.refresh_button = QPushButton('🔍', self)
         self.refresh_button.setFixedWidth(25)
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
         
+        h_layout3.addWidget(self.new_label_3)
+        h_layout3.addWidget(self.input_box4)
+        h_layout3.addWidget(self.combo_box)
+        h_layout3.addWidget(self.open_folder_button3)
+        h_layout3.addWidget(self.capa_button)
+        h_layout3.addWidget(self.refresh_button)
+
+        
+        self.new_label_4 = QLabel('실행 옵션', self)
+        self.new_label_4.setFixedWidth(120)
+        self.time_edit = QTimeEdit(self)
+        self.time_edit.setDisplayFormat("HH:mm")
+        self.checkbox_reservation = QCheckBox('예약 실행', self)
         self.combo_box2 = QComboBox(self)
-        self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
+        #self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버업로드','서버패치','서버삭제','서버복사','TEST'])
         self.combo_box2.setFixedWidth(120)
-        self.copy_button = QPushButton('실행', self)
+        self.combo_box2.currentTextChanged.connect(lambda: self.handle_combo_change(self.combo_box2.currentText()))
+        self.copy_button = QPushButton('지금 실행', self)
         self.copy_button.clicked.connect(self.execute_copy)
-        self.copy_button.setFixedWidth(60)
+        self.copy_button.setFixedWidth(125)
         # self.copy_button = QPushButton('COPY CLIENT', self)
         # self.copy_button.setFixedWidth(120)
         # self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient'))
@@ -193,49 +223,71 @@ class FolderCopyApp(QWidget):
         # self.copy_button2 = QPushButton('COPY ALL', self)
         # self.copy_button2.setFixedWidth(120)
         # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
-        h_layout3.addWidget(self.combo_box)
-        h_layout3.addWidget(self.open_folder_button3)
-        h_layout3.addWidget(self.capa_button)
-        h_layout3.addWidget(self.refresh_button)
-        h_layout3.addWidget(self.combo_box2)
-        h_layout3.addWidget(self.copy_button)
+        h_layout3_1.addWidget(self.new_label_4)
+        h_layout3_1.addWidget(self.combo_box2)
+        h_layout3_1.addStretch() 
+        h_layout3_1.addWidget(self.copy_button)
+        h_layout3_1.addWidget(self.time_edit)
+        h_layout3_1.addWidget(self.checkbox_reservation)
         # h_layout3.addWidget(self.copy_button1)
         # h_layout3.addWidget(self.copy_button2)
 
         # Time settings
-        self.time_edit = QTimeEdit(self)
-        self.time_edit.setDisplayFormat("HH:mm")
-        self.input_box4 = QLineEdit(self)
-        self.input_box4.setPlaceholderText('빌드명 포함 스트링(;로 구분)')
-        self.input_box4.setFixedWidth(120)
+        #h_layout4.addWidget(self.combo_box1)
+
+        # 서버삭제 리스트 위젯젯
+        self.detail_container = QWidget()
+        self.detail_container.hide()
+        detail_container_layout = QVBoxLayout()
+        
+        self.new_label_7 = QLabel('AWS URL LIST', self)
+        self.new_label_7.setFixedWidth(120)
+        self.textarea0 = QTextEdit(self)#서버삭제 url list
+        detail_container_layout.addWidget(self.new_label_7)
+        detail_container_layout.addWidget(self.textarea0)
+        self.detail_container.setLayout(detail_container_layout)
+
+        #AWS 위젯젯
+        self.aws_container = QWidget()
+        self.aws_container.hide()
+        aws_container_layout = QHBoxLayout()
+
+        self.new_label_5 = QLabel('AWS URL', self)
+        self.new_label_5.setFixedWidth(120)
         self.input_box5 = QLineEdit(self)
         self.input_box5.setPlaceholderText('AWS 주소')
+        self.new_label_6 = QLabel('Branch', self)
+        self.new_label_6.setFixedWidth(120)
         self.input_box6 = QLineEdit(self)
         self.input_box6.setPlaceholderText('branch')
         self.input_box6.setFixedWidth(120)
         # self.combo_box1 = QComboBox(self)
         # self.combo_box1.addItems(['Only Client','Only Server','All'])
         # self.combo_box1.setFixedWidth(120)
-        self.checkbox_reservation = QCheckBox('예약', self)
-        h_layout4.addWidget(self.time_edit)
-        h_layout4.addWidget(self.input_box4)
-        h_layout4.addWidget(self.input_box5)
-        h_layout4.addWidget(self.input_box6)
-        #h_layout4.addWidget(self.combo_box1)
-        h_layout4.addWidget(self.checkbox_reservation)
+        aws_container_layout.addWidget(self.new_label_5)
+        aws_container_layout.addWidget(self.input_box5)
+        aws_container_layout.addWidget(self.new_label_6)
+        aws_container_layout.addWidget(self.input_box6)
 
-        # row 5
-        self.textarea0 = QTextEdit(self)
-        h_layout5.addWidget(self.textarea0)
+        self.aws_container.setLayout(aws_container_layout)
+        #self.detail_container.addWidget(self.textarea0)
+       # h_layout5 = QHBoxLayout(self.detail_container)
+        #detail_container_layout.addWidget(self.textarea0)
+        
 
+        
 
         # Set the layout
         layout.addLayout(h_layout1)
         layout.addLayout(h_layout2)
         layout.addLayout(h_layout2_1)
         layout.addLayout(h_layout3)
+        layout.addLayout(h_layout3_1)
         layout.addLayout(h_layout4)
-        layout.addLayout(h_layout5)
+        layout.addWidget(self.detail_container)
+        layout.addWidget(self.aws_container)
+        #layout.addLayout(h_layout5)
+        #layout.addStretch()
         self.setLayout(layout)
 
 
@@ -248,7 +300,19 @@ class FolderCopyApp(QWidget):
         self.check_timer.timeout.connect(self.check_time)
         self.check_timer.start(1000)
 
+    def handle_combo_change(self, text):
+        self.adjust_detail_conainer()
 
+        if text == '서버삭제' :
+            self.detail_container.show()
+        elif text == '서버업로드' or text == '서버패치' : 
+            self.aws_container.show()
+
+    def adjust_detail_conainer(self):
+        self.detail_container.hide()
+        self.aws_container.hide()
+        self.adjustSize()
+        self.resize(self.first_size[0], self.first_size[1])
 
     def choose_folder(self, return_input_box):
         folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder')
@@ -572,6 +636,20 @@ class FolderCopyApp(QWidget):
         with open(self.settings_file, 'w') as file:
             json.dump(settings, file)
 
+    def read_version_from_file(self):
+        with open("version.txt", "r", encoding="utf-8") as f:
+            version = f.read().strip()
+            return  version
+        # version.txt에서 버전 읽기
+    # def read_version_from_file(self):
+    #     try:
+    #         with open("version.txt", "r", encoding="utf-8") as f:
+    #             return f.read().strip()
+    #     except FileNotFoundError:
+    #         return "Unknown"
+
+        
+        
     def show_about_dialog(self):
         about_dialog = QDialog(self)
         about_dialog.setWindowTitle("About")
@@ -587,12 +665,40 @@ class FolderCopyApp(QWidget):
         layout = QVBoxLayout()
         recent_file_name, recent_moditime = self.get_most_recent_file()
 
-        version_label = QLabel("Version: v1.0.3", about_dialog)
+        version_label = QLabel(f"Version : {self.read_version_from_file()}", about_dialog)
         #last_update_label = QLabel(f"Last update date: {recent_moditime}", about_dialog)
-        last_update_label = QLabel(f"Last update date: 2024-12-23", about_dialog)
-        created_by_label = QLabel("Created by: mssung@pubg.com", about_dialog)
-        first_production_date_label = QLabel("First production date: 2024-07-01", about_dialog)
-
+        #last_update_label = QLabel(f"Last update date: 2024-12-23", about_dialog)
+        created_by_label = QLabel("Ask : mssung@pubg.com", about_dialog)
+        first_production_date_label = QLabel("From : 2024-07-01", about_dialog)
+        # giturl_label = QLabel(about_dialog)
+        # giturl_label.setTextFormat(Qt.RichText)
+        # giturl_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        # giturl_label.setOpenExternalLinks(True)
+        # giturl_label.setText('''
+        #     <a href="https://github.com/SungMinseok/GetBuild" style="color: #4fc3f7; text-decoration: none;">
+        #         <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16" height="16" style="vertical-align: middle; margin-right: 4px;">
+        #         GitHub
+        #     </a>
+        # ''')
+        report_label = QLabel(about_dialog)
+        report_label.setTextFormat(Qt.RichText)
+        report_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        report_label.setOpenExternalLinks(True)
+        report_label.setText('''
+            <a href="https://github.com/SungMinseok/GetBuild/issues" style="color: #4fc3f7; text-decoration: none;">
+                🐞 Bugs
+            </a>
+        ''')#⚒️
+        
+        guide_label = QLabel(about_dialog)
+        guide_label.setTextFormat(Qt.RichText)
+        guide_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        guide_label.setOpenExternalLinks(True)
+        guide_label.setText('''
+            <a href="https://krafton.atlassian.net/wiki/spaces/P2/pages/124523484/mssung+PBB+Build+Auto" style="color: #4fc3f7; text-decoration: none;">
+                📖 Guide
+            </a>
+        ''')
         #github_label = QLabel("GitHub link:", about_dialog)
         # github_icon = QLabel("Issues", about_dialog)
         # pixmap = QPixmap("github_icon.png")  # Replace with the path to your GitHub icon
@@ -601,9 +707,12 @@ class FolderCopyApp(QWidget):
         # github_icon.mousePressEvent = lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
 
         layout.addWidget(version_label)
-        layout.addWidget(last_update_label)
+        #layout.addWidget(last_update_label)
         layout.addWidget(created_by_label)
         layout.addWidget(first_production_date_label)
+        #layout.addWidget(giturl_label)
+        layout.addWidget(report_label)
+        layout.addWidget(guide_label)
 
         h_layout = QHBoxLayout()
         #h_layout.addWidget(github_label)
@@ -856,7 +965,7 @@ class FolderCopyApp(QWidget):
 if __name__ == '__main__':
     #subprocess.call(["QuickBuild_updater.exe", "--silent"])  # ← 추가
     #subprocess.call(["python", "updater.py", "--silent"])  # ← .py 직접 실행
-    updater.main()
+    updater.main(False)
     app = QApplication(sys.argv)
     ex = FolderCopyApp()
     sys.exit(app.exec_())
