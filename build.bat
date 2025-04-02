@@ -2,7 +2,7 @@
 setlocal ENABLEDELAYEDEXPANSION
 
 REM === [1] 버전 구성 ===
-set MAJOR_VERSION=1.0
+set MAJOR_VERSION=2.0
 
 REM 현재 날짜 및 시간 가져오기
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy.MM.dd-HHmm"') do set DATE_VER=%%i
