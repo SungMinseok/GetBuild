@@ -11,26 +11,9 @@ from datetime import datetime
 import traceback
 
 # ───── 설정 ─────
-
-# ───── 자기복제 설정 (RatUpdater 스타일) ─────
 SELF_NAME = os.path.basename(sys.argv[0])
 IS_TEMP = "_temp" in SELF_NAME.lower()
 TEMP_NAME = SELF_NAME.replace(".exe", "_temp.exe") if SELF_NAME.endswith(".exe") else "updater_temp.exe"
-
-def relaunch_as_temp():
-    if not os.path.exists(TEMP_NAME):
-        shutil.copy2(SELF_NAME, TEMP_NAME)
-    subprocess.Popen([TEMP_NAME, "--run-temp"] + sys.argv[1:])
-    sys.exit()
-
-def delete_self():
-    bat = "_self_delete.bat"
-    with open(bat, "w") as f:
-        f.write("@echo off\n")
-        f.write("ping 127.0.0.1 -n 2 >nul\n")
-        f.write("del \"{}\"\n".format(SELF_NAME))
-        f.write("del \"%~f0\"\n")
-    subprocess.Popen([bat], shell=True)
 
 VERSION_FILE = "version.txt"
 APP_NAME = "QuickBuild.exe"
@@ -77,20 +60,17 @@ def parse_version_date(version_str):
         parts = version_str.split("-")
         if len(parts) != 3:
             return None
-        date_str = parts[1]
-        time_str = parts[2]
+        date_str, time_str = parts[1], parts[2]
         return datetime.strptime(f"{date_str}-{time_str}", "%Y.%m.%d-%H%M")
-    except Exception:
+    except:
         return None
 
 def is_remote_newer(local_version, remote_version):
     local_dt = parse_version_date(local_version)
     remote_dt = parse_version_date(remote_version)
-    if not local_dt or not remote_dt:
-        return False
-    return remote_dt > local_dt
+    return remote_dt and local_dt and remote_dt > local_dt
 
-# ───── 업데이트 로직 ─────
+# ───── 파일 작업 ─────
 def download_zip():
     try:
         os.makedirs(TEMP_DIR, exist_ok=True)
@@ -140,7 +120,22 @@ def clean_up():
         os.remove(zip_path)
     shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
-# ───── 메인 진입점 ─────
+def relaunch_as_temp():
+    if not os.path.exists(TEMP_NAME):
+        shutil.copy2(SELF_NAME, TEMP_NAME)
+    subprocess.Popen([TEMP_NAME, "--run-temp"] + sys.argv[1:])
+    sys.exit()
+
+def delete_self():
+    bat = "_self_delete.bat"
+    with open(bat, "w") as f:
+        f.write("@echo off\n")
+        f.write("ping 127.0.0.1 -n 2 >nul\n")
+        f.write(f"del \"{SELF_NAME}\"\n")
+        f.write("del \"%~f0\"\n")
+    subprocess.Popen([bat], shell=True)
+
+# ───── 메인 로직 ─────
 def main():
     try:
         quickbuild_exists = os.path.exists(APP_NAME)
@@ -150,8 +145,8 @@ def main():
         if not remote_version:
             return
 
+        # ✅ 신규 설치
         if not quickbuild_exists:
-            relaunch_as_temp()
             zip_path = download_zip()
             if not zip_path: return
             extract_zip(zip_path)
@@ -160,6 +155,7 @@ def main():
             show_message("설치 완료", "QuickBuild가 성공적으로 설치되었습니다.")
             return
 
+        # ✅ 최신이면 종료
         if not is_remote_newer(local_version, remote_version):
             if not is_silent_mode():
                 show_message(
@@ -168,21 +164,25 @@ def main():
                 )
             return
 
-        if not is_silent_mode():
+        # ✅ 업데이트 필요 시 팝업 (원본에서만)
+        if not IS_TEMP:
             do_update = ask_yes_no(
                 "업데이트 확인",
                 f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
             )
             if not do_update:
                 return
+            relaunch_as_temp()
+            return
 
-        relaunch_as_temp()
+        # ✅ temp 모드에서 실제 업데이트 수행
         zip_path = download_zip()
         if not zip_path: return
         extract_zip(zip_path)
         kill_app()
         replace_files()
 
+        # 본체 교체
         orig_name = SELF_NAME.replace("_temp", "")
         try:
             if os.path.exists(orig_name):
@@ -199,13 +199,10 @@ def main():
         if IS_TEMP:
             delete_self()
 
-    except Exception as e:
+    except Exception:
         print("🔥 [업데이트 중 에러 발생]")
         print(traceback.format_exc())
         os.system("pause")
 
 if __name__ == "__main__":
-    # if "--run-temp" not in sys.argv:
-    #     relaunch_as_temp()
-    # else:
     main()
