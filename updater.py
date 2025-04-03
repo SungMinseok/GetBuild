@@ -166,7 +166,7 @@ def main(isDirect = True):
     replace_files()
     clean_up()
     show_message("업데이트 완료", "QuickBuild가 최신 버전으로 업데이트되었습니다.")
-    run_app()
+    #run_app()
 
 if __name__ == "__main__":
     main()
