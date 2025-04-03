@@ -203,7 +203,7 @@ def main():
         os.system("pause")
 
 if __name__ == "__main__":
-    if "--run-temp" not in sys.argv:
-        relaunch_as_temp()
-    else:
-        main()
+    # if "--run-temp" not in sys.argv:
+    #     relaunch_as_temp()
+    # else:
+    main()
