@@ -11,6 +11,27 @@ from datetime import datetime
 import traceback
 
 # ───── 설정 ─────
+
+# ───── 자기복제 설정 (RatUpdater 스타일) ─────
+SELF_NAME = os.path.basename(sys.argv[0])
+IS_TEMP = "_temp" in SELF_NAME.lower()
+TEMP_NAME = SELF_NAME.replace(".exe", "_temp.exe") if SELF_NAME.endswith(".exe") else "updater_temp.exe"
+
+def relaunch_as_temp():
+    if not os.path.exists(TEMP_NAME):
+        shutil.copy2(SELF_NAME, TEMP_NAME)
+    subprocess.Popen([TEMP_NAME, "--run-temp"] + sys.argv[1:])
+    sys.exit()
+
+def delete_self():
+    bat = "_self_delete.bat"
+    with open(bat, "w") as f:
+        f.write("@echo off\n")
+        f.write("ping 127.0.0.1 -n 2 >nul\n")
+        f.write("del \"{}\"\n".format(SELF_NAME))
+        f.write("del \"%~f0\"\n")
+    subprocess.Popen([bat], shell=True)
+
 VERSION_FILE = "version.txt"
 APP_NAME = "QuickBuild.exe"
 ZIP_URL = "https://github.com/SungMinseok/GetBuild/releases/latest/download/QuickBuild.zip"
@@ -24,9 +45,10 @@ def is_silent_mode():
 def show_message(title, message):
     root = tk.Tk()
     root.withdraw()
-    root.attributes("-topmost", True)  # 👈 핵심
+    root.attributes("-topmost", True)
     messagebox.showinfo(title, message)
     root.destroy()
+
 def ask_yes_no(title, message):
     root = tk.Tk()
     root.withdraw()
@@ -44,9 +66,7 @@ def get_local_version():
 def get_remote_version():
     try:
         r = requests.get(REMOTE_VERSION_URL, timeout=5)
-        remote_version = r.text.strip()
-        print(remote_version)
-        return remote_version
+        return r.text.strip()
     except Exception as e:
         if not is_silent_mode():
             show_message("업데이트 실패", f"원격 버전 정보를 불러오는 데 실패했습니다:\n{e}")
@@ -97,11 +117,10 @@ def kill_app():
         pass
 
 def replace_files():
-    current_exe = os.path.basename(__file__)
     for root, dirs, files in os.walk(TEMP_DIR):
         for file in files:
-            if file.lower() == current_exe.lower():
-                print(f"[SKIP] 자기 자신 복사 제외: {file}")
+            if file.lower() == SELF_NAME.lower() or file.lower() == "updater.py":
+                print(f"[SKIP] 보호된 파일 제외: {file}")
                 continue
             src_path = os.path.join(root, file)
             rel_path = os.path.relpath(src_path, TEMP_DIR)
@@ -122,9 +141,8 @@ def clean_up():
     shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
 # ───── 메인 진입점 ─────
-def main(isDirect = True):
+def main():
     try:
-        print(is_silent_mode())
         quickbuild_exists = os.path.exists(APP_NAME)
         local_version = get_local_version() if quickbuild_exists else None
         remote_version = get_remote_version()
@@ -132,7 +150,6 @@ def main(isDirect = True):
         if not remote_version:
             return
 
-        # 신규 설치
         if not quickbuild_exists:
             zip_path = download_zip()
             if not zip_path: return
@@ -140,20 +157,17 @@ def main(isDirect = True):
             replace_files()
             clean_up()
             show_message("설치 완료", "QuickBuild가 성공적으로 설치되었습니다.")
-            #run_app()
             return
 
-        # 최신 여부 확인
         if not is_remote_newer(local_version, remote_version):
-            if is_silent_mode():
+            if not is_silent_mode():
                 show_message(
                     "업데이트 불필요",
                     f"이미 최신 버전입니다.\n\n현재 버전: {local_version}\n최신 버전: {remote_version}"
                 )
             return
 
-        # 업데이트할지 확인 (silent 모드는 바로 실행)
-        else:
+        if not is_silent_mode():
             do_update = ask_yes_no(
                 "업데이트 확인",
                 f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
@@ -161,19 +175,35 @@ def main(isDirect = True):
             if not do_update:
                 return
 
-        # 업데이트 실행
         zip_path = download_zip()
         if not zip_path: return
         extract_zip(zip_path)
         kill_app()
         replace_files()
+
+        orig_name = SELF_NAME.replace("_temp", "")
+        try:
+            if os.path.exists(orig_name):
+                os.remove(orig_name)
+            shutil.copy2(SELF_NAME, orig_name)
+            print(f"[INFO] 본체 덮어쓰기 완료: {orig_name}")
+        except Exception as e:
+            print(f"[WARN] 본체 덮어쓰기 실패: {e}")
+
         clean_up()
         show_message("업데이트 완료", "QuickBuild가 최신 버전으로 업데이트되었습니다.")
-        #run_app()
+        run_app()
+
+        if IS_TEMP:
+            delete_self()
+
     except Exception as e:
         print("🔥 [업데이트 중 에러 발생]")
         print(traceback.format_exc())
-        os.system("pause")  # 콘솔 창 유지
+        os.system("pause")
 
 if __name__ == "__main__":
-    main()
+    if "--run-temp" not in sys.argv:
+        relaunch_as_temp()
+    else:
+        main()
