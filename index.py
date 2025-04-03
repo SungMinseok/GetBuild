@@ -963,9 +963,9 @@ class FolderCopyApp(QWidget):
         self.generate_backend_bat_files(servers,dest_path)
 
 if __name__ == '__main__':
-    #subprocess.call(["QuickBuild_updater.exe", "--silent"])  # ← 추가
+    subprocess.call(["QuickBuild_updater.exe", "--silent"])  # ← 추가
     #subprocess.call(["python", "updater.py", "--silent"])  # ← .py 직접 실행
-    updater.main(False)
+    #updater.main(False)
     app = QApplication(sys.argv)
     ex = FolderCopyApp()
     sys.exit(app.exec_())

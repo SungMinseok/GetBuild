@@ -8,6 +8,7 @@ import shutil
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
+import traceback
 
 # ───── 설정 ─────
 VERSION_FILE = "version.txt"
@@ -122,51 +123,57 @@ def clean_up():
 
 # ───── 메인 진입점 ─────
 def main(isDirect = True):
-    quickbuild_exists = os.path.exists(APP_NAME)
-    local_version = get_local_version() if quickbuild_exists else None
-    remote_version = get_remote_version()
+    try:
+        print(is_silent_mode())
+        quickbuild_exists = os.path.exists(APP_NAME)
+        local_version = get_local_version() if quickbuild_exists else None
+        remote_version = get_remote_version()
 
-    if not remote_version:
-        return
+        if not remote_version:
+            return
 
-    # 신규 설치
-    if not quickbuild_exists:
+        # 신규 설치
+        if not quickbuild_exists:
+            zip_path = download_zip()
+            if not zip_path: return
+            extract_zip(zip_path)
+            replace_files()
+            clean_up()
+            show_message("설치 완료", "QuickBuild가 성공적으로 설치되었습니다.")
+            #run_app()
+            return
+
+        # 최신 여부 확인
+        if not is_remote_newer(local_version, remote_version):
+            if is_silent_mode():
+                show_message(
+                    "업데이트 불필요",
+                    f"이미 최신 버전입니다.\n\n현재 버전: {local_version}\n최신 버전: {remote_version}"
+                )
+            return
+
+        # 업데이트할지 확인 (silent 모드는 바로 실행)
+        else:
+            do_update = ask_yes_no(
+                "업데이트 확인",
+                f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
+            )
+            if not do_update:
+                return
+
+        # 업데이트 실행
         zip_path = download_zip()
         if not zip_path: return
         extract_zip(zip_path)
+        kill_app()
         replace_files()
         clean_up()
-        show_message("설치 완료", "QuickBuild가 성공적으로 설치되었습니다.")
+        show_message("업데이트 완료", "QuickBuild가 최신 버전으로 업데이트되었습니다.")
         #run_app()
-        return
-
-    # 최신 여부 확인
-    if not is_remote_newer(local_version, remote_version):
-        if isDirect:
-            show_message(
-                "업데이트 불필요",
-                f"이미 최신 버전입니다.\n\n현재 버전: {local_version}\n최신 버전: {remote_version}"
-            )
-        return
-
-    # 업데이트할지 확인 (silent 모드는 바로 실행)
-    else:
-        do_update = ask_yes_no(
-            "업데이트 확인",
-            f"현재 버전: {local_version}\n최신 버전: {remote_version}\n\n업데이트 하시겠습니까?"
-        )
-        if not do_update:
-            return
-
-    # 업데이트 실행
-    zip_path = download_zip()
-    if not zip_path: return
-    extract_zip(zip_path)
-    kill_app()
-    replace_files()
-    clean_up()
-    show_message("업데이트 완료", "QuickBuild가 최신 버전으로 업데이트되었습니다.")
-    #run_app()
+    except Exception as e:
+        print("🔥 [업데이트 중 에러 발생]")
+        print(traceback.format_exc())
+        os.system("pause")  # 콘솔 창 유지
 
 if __name__ == "__main__":
     main()
