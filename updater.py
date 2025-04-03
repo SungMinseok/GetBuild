@@ -151,6 +151,7 @@ def main():
             return
 
         if not quickbuild_exists:
+            relaunch_as_temp()
             zip_path = download_zip()
             if not zip_path: return
             extract_zip(zip_path)
@@ -175,6 +176,7 @@ def main():
             if not do_update:
                 return
 
+        relaunch_as_temp()
         zip_path = download_zip()
         if not zip_path: return
         extract_zip(zip_path)
