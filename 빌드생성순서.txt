@@ -1,0 +1,7 @@
+1.vscode로 수정사항 sync
+2.build.bat실행하여 신규 quickbuild.zip 생성 확인
+3.git_release.py 실행하여 릴리즈 신규 업데이트 확인
+
+
+*업데이터 업데이트 시
+위 2번 스텝 진행 전에 build_updater.bat실행하여 dist에 신규 updater 생성 확인 후 2번 스텝부터 다시 진행
