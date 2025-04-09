@@ -36,6 +36,7 @@ class FolderCopyApp(QWidget):
         self.first_size = self.width(), self.height()
         self.load_settings()
         self.isReserved = False
+        self.last_reserved_time = None
 
     def initUI(self):
         # Apply the custom stylesheet
@@ -134,20 +135,25 @@ class FolderCopyApp(QWidget):
         self.new_label_1 = QLabel('빌드 소스 경로', self)
         self.new_label_1.setFixedWidth(120)
         #print(self.new_label_1.width())
-        self.input_box1 = QLineEdit(self)
-        self.input_box1.setText(fr'\\pubg-pds\PBB\Builds')
+
+        
+        self.buildSource_comboBox = QComboBox(self)
+        self.buildSource_comboBox.addItems([fr'\\pubg-pds\PBB\Builds',fr'\\pbb-ams-dev\p\builds'])
+        #self.buildSource_comboBox.setFixedWidth(120)
+        #self.input_box1 = QLineEdit(self)
+        #self.input_box1.setText(fr'\\pubg-pds\PBB\Builds')
         self.open_folder_button1 = QPushButton('📂', self)        
         self.open_folder_button1.setFixedWidth(25)
-        self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.input_box1.text()))       
+        self.open_folder_button1.clicked.connect(lambda: self.open_folder(self.buildSource_comboBox.currentText()))       
         self.folder_button1 = QPushButton('...', self)
         #self.folder_button1.setFixedWidth(120)
         self.folder_button1.setFixedWidth(25)
-        self.folder_button1.clicked.connect(lambda: self.choose_folder(self.input_box1))
+        self.folder_button1.clicked.connect(lambda: self.choose_folder(self.buildSource_comboBox))
         # self.open_folder_button1 = QPushButton('OPEN', self)        
         # self.open_folder_button1.setFixedWidth(60)
         # self.open_folder_button1.clicked.connect(self.open_folder1)
         h_layout1.addWidget(self.new_label_1)
-        h_layout1.addWidget(self.input_box1)
+        h_layout1.addWidget(self.buildSource_comboBox)
         h_layout1.addWidget(self.folder_button1)
         h_layout1.addWidget(self.open_folder_button1)
         #h_layout1.addWidget(self.open_folder_button1)
@@ -191,7 +197,7 @@ class FolderCopyApp(QWidget):
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
         self.refresh_button = QPushButton('🔍', self)
         self.refresh_button.setFixedWidth(25)
-        self.refresh_button.clicked.connect(self.refresh_dropdown_revision)
+        self.refresh_button.clicked.connect(self.refresh_dropdown_revision2)
         
         h_layout3.addWidget(self.new_label_3)
         h_layout3.addWidget(self.input_box4)
@@ -317,7 +323,10 @@ class FolderCopyApp(QWidget):
     def choose_folder(self, return_input_box):
         folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder')
         if folder_path:
-            return_input_box.setText(folder_path)
+            try:
+                return_input_box.setText(folder_path)
+            except:
+                return_input_box.setCurrentText(folder_path)
             #self.refresh_dropdown()
 
     def choose_folder2(self):
@@ -331,7 +340,7 @@ class FolderCopyApp(QWidget):
         '''
         
         self.combo_box.clear()
-        folder_path = self.input_box1.text()
+        folder_path = self.buildSource_comboBox.currentText()
         filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
 
         if os.path.isdir(folder_path):
@@ -353,12 +362,13 @@ class FolderCopyApp(QWidget):
         '''
         sort by revision
         '''
+        print(f'refresh_dropdown_revision starttime {datetime.now()}')
         
         self.load_stylesheet(fr"qss/red.qss")
         time.sleep(1)
 
         self.combo_box.clear()
-        folder_path = self.input_box1.text()
+        folder_path = self.buildSource_comboBox.currentText()
         filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
 
         check_file_count = False # 최신순으로 파일 개수 체크 후, 조건을 만족하는 순간 TRUE, 더 이상 체크하지 않음
@@ -394,6 +404,77 @@ class FolderCopyApp(QWidget):
         self.combo_box.clear()
         self.combo_box.addItems(sorted_items)
         self.load_stylesheet(fr"qss\default.qss")
+        print(f'refresh_dropdown_revision endtime {datetime.now()}')
+
+    def refresh_dropdown_revision2(self):        
+        '''
+        sort by revision with optimized logic
+        '''
+        print(f'refresh_dropdown_revision starttime {datetime.now()}')
+                
+        # 최신화 중 메시지 박스 생성
+        # progress_message = QMessageBox(self)
+        # progress_message.setWindowTitle("진행 중")
+        # progress_message.setText("최신화 중입니다. 잠시만 기다려주세요...")
+        # progress_message.setStandardButtons(QMessageBox.NoButton)  # 버튼 제거
+        # progress_message.setWindowModality(Qt.ApplicationModal)
+        # progress_message.show()
+        # 최신화 중 팝업 생성
+        progress_dialog = QProgressDialog(self)
+        progress_dialog.setWindowTitle("최신화 중...")
+        progress_dialog.setWindowFlags(progress_dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+    
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setCancelButton(None)
+        progress_dialog.show()
+
+        try:
+            self.load_stylesheet(fr"qss/red.qss")
+            self.combo_box.clear()
+            folder_path = self.buildSource_comboBox.currentText()
+            filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+
+            if not os.path.isdir(folder_path):
+                QMessageBox.critical(self, 'Error', 'Source path is not a valid directory.')
+                return
+
+            folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
+            print(f'폴더 개수 : {len(folders)}')
+            #folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+                
+            # 리비전 숫자를 기준으로 내림차순 정렬
+            folders.sort(key=lambda x: self.extract_revision_number(x), reverse=True)
+
+            added_count = 0  # 추가된 폴더 개수 추적
+
+            for folder in folders:
+                if added_count >= 50:  # 최대 5개까지만 추가
+                    break
+
+                folder_full_path = os.path.join(folder_path, folder)
+                version_file_path = os.path.join(folder_full_path, "version.txt")
+
+                # 메인 폴더에 version.txt가 있는 경우만 추가
+                if added_count >= 1 or os.path.isfile(version_file_path):
+                    if len(filter_texts) == 0 or any(filter_text in folder for filter_text in filter_texts):
+                        self.combo_box.addItem(folder)
+                        added_count += 1
+
+            # Get the list of items in the dropdown
+            items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
+
+            # Sort the items based on the extracted revision number in descending order
+            #sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
+
+            # Clear the combo box and repopulate it with the sorted items
+            self.combo_box.clear()
+            self.combo_box.addItems(items)
+            self.load_stylesheet(fr"qss\default.qss")
+            print(f'refresh_dropdown_revision endtime {datetime.now()}')
+
+        finally:
+            # 작업 완료 후 팝업 닫기
+            progress_dialog.close()
 
     def copy_folder(self, dest_folder, target_folder, target_name):
         '''
@@ -402,7 +483,7 @@ class FolderCopyApp(QWidget):
         target_name:저장할 폴더명 'WindowsClient'
         '''
         log_execution()
-        src_folder = self.input_box1.text()
+        src_folder = self.buildSource_comboBox.currentText()
         #dest_folder = self.input_box2.text()
         #clinet_folder = self.combo_box.currentText()
         folder_to_copy = os.path.join(src_folder, target_folder, target_name)
@@ -465,7 +546,7 @@ class FolderCopyApp(QWidget):
         '''
         #print(revision)
         log_execution()
-        src_folder = self.input_box1.text()
+        src_folder = self.buildSource_comboBox.currentText()
         #src_folder = 'c:/source'
         client_folder = self.combo_box.currentText()
         buildType = self.combo_box.currentText().split('_')[1]
@@ -570,7 +651,14 @@ class FolderCopyApp(QWidget):
             current_time = QTime.currentTime()
             set_time = self.time_edit.time()
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
-                
+                now = datetime.now()
+
+                # 이전에 실행한 적이 있다면, 같은 분 안에서는 실행하지 않음
+                if self.last_reserved_time:
+                    if now.strftime("%Y-%m-%d %H:%M") == self.last_reserved_time.strftime("%Y-%m-%d %H:%M"):
+                        print(f"예약 시간 {self.last_reserved_time.strftime('%Y-%m-%d %H:%M')}에 이미 실행됨")
+                        return  # ⛔ 같은 예약 시간 내 이미 실행됨
+                    
                 self.checkbox_reservation.setChecked(False)
                 self.isReserved = True
                 self.execute_copy(refresh=True)
@@ -613,7 +701,7 @@ class FolderCopyApp(QWidget):
         if os.path.exists(self.settings_file):
             with open(self.settings_file, 'r') as file:
                 settings = json.load(file)
-                self.input_box1.setText(settings.get('input_box1', ''))
+                #self.input_box1.setText(settings.get('input_box1', ''))
                 self.input_box2.setText(settings.get('input_box2', ''))
                 #self.input_box2_1.setText(settings.get('input_box2_1', ''))
                 self.combo_box.addItems(settings.get('combo_box', []))
@@ -625,7 +713,7 @@ class FolderCopyApp(QWidget):
 
     def save_settings(self):
         settings = {
-            'input_box1': self.input_box1.text(),
+            'input_box1': self.buildSource_comboBox.currentText(),
             'input_box2': self.input_box2.text(),
 #            'input_box2_1': self.input_box2_1.text(),
             'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())],
@@ -723,7 +811,7 @@ class FolderCopyApp(QWidget):
         about_dialog.exec_()
 
     def check_capacity(self):
-        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -740,7 +828,7 @@ class FolderCopyApp(QWidget):
         QMessageBox.information(self, 'Folder Capacity', f'Total size of {self.combo_box.currentText()} is {total_size_mb:.2f} MB')
 
     def show_last_modification_time(self):
-        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -768,7 +856,7 @@ class FolderCopyApp(QWidget):
                                 f'Time passed since last modification: {time_passed_str}')
 
     def show_creation_time(self):
-        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -801,9 +889,10 @@ class FolderCopyApp(QWidget):
                                 f'Time passed since creation: {time_passed_str}')
         
     def show_build_time_info(self):
-        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        print(f'show_build_time_info starttime {datetime.now()}')
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
         
-        if not os.path.isdir(folder_path):
+        if not self.combo_box.currentText() or not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
             return
 
@@ -830,6 +919,7 @@ class FolderCopyApp(QWidget):
         
         #time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
         file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
+        print(f'show_build_time_info endtime {datetime.now()}')
         
         QMessageBox.information(self, 'Folder Creation Time', 
                                 f'{self.combo_box.currentText()}\n'
@@ -840,7 +930,7 @@ class FolderCopyApp(QWidget):
         )
             
     def show_file_count(self):
-        folder_path = os.path.join(self.input_box1.text(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -958,9 +1048,42 @@ class FolderCopyApp(QWidget):
                 f.write(command)
             print(f"BAT 파일 생성됨: {full_path}")
 
+    def show_last_file_info(self):
+        print(f'show_last_file_info starttime {datetime.now()}')
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        
+        if not self.combo_box.currentText() or not os.path.isdir(folder_path):
+            QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
+            return
+
+        # Get the most recently modified file in the folder
+        most_recent_file = None
+        most_recent_time = 0
+
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                mod_time = os.path.getmtime(file_path)
+                if mod_time > most_recent_time:
+                    most_recent_time = mod_time
+                    most_recent_file = file_path
+
+        if most_recent_file:
+            most_recent_datetime = datetime.fromtimestamp(most_recent_time)
+            formatted_time = most_recent_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            QMessageBox.information(self, 'Last Modified File Info', 
+                                    f'가장 최근 수정된 파일: {os.path.basename(most_recent_file)}\n'
+                                    f'파일 경로: {most_recent_file}\n'
+                                    f'수정 시간: {formatted_time}')
+        else:
+            QMessageBox.information(self, 'Last Modified File Info', '폴더에 파일이 없습니다.')
+
+        print(f'show_last_file_info endtime {datetime.now()}')
+
     def execute_test(self):
         dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
-        self.generate_backend_bat_files(servers,dest_path)
+        #self.generate_backend_bat_files(servers,dest_path)
+        self.show_last_file_info()
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):
