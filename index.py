@@ -900,16 +900,33 @@ class FolderCopyApp(QWidget):
         last_mod_time = os.path.getmtime(folder_path)
         last_mod_datetime = datetime.fromtimestamp(last_mod_time)
         last_mod_formatted_time = last_mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Get the creation time of the folder
-        try:
-            creation_time = os.path.getctime(folder_path)
-        except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Unable to retrieve creation time: {str(e)}')
-            return
+    
+        # Get the modification time of version.txt
+        version_file_path = os.path.join(folder_path, "version.txt")
+        if os.path.isfile(version_file_path):
+            version_mod_time = os.path.getmtime(version_file_path)
+            version_mod_datetime = datetime.fromtimestamp(version_mod_time)
+            version_mod_formatted_time = version_mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            version_mod_formatted_time = "version.txt not found"
 
-        creation_datetime = datetime.fromtimestamp(creation_time)
-        creation_formatted_time = creation_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        # Calculate the time passed since the version.txt modification
+        current_time = datetime.now()
+        time_passed = current_time - version_mod_datetime
+
+        # Format the time passed as hours and minutes
+        hours = time_passed.seconds // 3600
+        minutes = (time_passed.seconds % 3600) // 60
+
+        # Get the creation time of the folder
+        # try:
+        #     creation_time = os.path.getctime(folder_path)
+        # except Exception as e:
+        #     QMessageBox.critical(self, 'Error', f'Unable to retrieve creation time: {str(e)}')
+        #     return
+
+        #creation_datetime = datetime.fromtimestamp(creation_time)
+        #creation_formatted_time = creation_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
         # Format the time passed as days, hours, minutes, and seconds
         #days, seconds = time_passed.days, time_passed.seconds
@@ -918,15 +935,16 @@ class FolderCopyApp(QWidget):
         # seconds = seconds % 60
         
         #time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
-        file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
+        #file_count = sum([len(files) for _, _, files in os.walk(folder_path)])
         print(f'show_build_time_info endtime {datetime.now()}')
         
         QMessageBox.information(self, 'Folder Creation Time', 
                                 f'{self.combo_box.currentText()}\n'
-                                f'생성시간: {creation_formatted_time}\n'
-                                f'마지막 수정시간: {last_mod_formatted_time}\n'
-                                f'소요시간: {last_mod_datetime-creation_datetime}\n'
-                                f'총 파일개수: {file_count}\n'
+                               # f'생성시간: {creation_formatted_time}\n'
+                                f'업로드 시각: {version_mod_formatted_time} ({hours}시간 {minutes}분 전)\n'
+                               # f'소요시간: {last_mod_datetime-creation_datetime}\n'
+                               # f'총 파일개수: {file_count}\n'
+                               f'* 위는 빌드 생성 시작 시각이 아닙니다.'
         )
             
     def show_file_count(self):
