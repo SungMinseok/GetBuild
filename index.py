@@ -13,7 +13,6 @@ import aws
 from makelog import *
 import time
 import subprocess
-import updater
 
 
 servers = [
@@ -117,7 +116,9 @@ class FolderCopyApp(QWidget):
         about_action1.triggered.connect(lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues")))
         about_action2 = QAction("Guide", self)
         about_action2.triggered.connect(lambda event: QDesktopServices.openUrl(QUrl("https://wiki.krafton.com/pages/viewpage.action?pageId=4926105897")))
-        about_menu.addActions([about_action,about_action1,about_action2])
+        about_action3 = QAction("Check Update", self)
+        about_action3.triggered.connect(self.run_quickbuild_updater)
+        about_menu.addActions([about_action,about_action1,about_action2,about_action3])
 
         layout = QVBoxLayout()
         layout.setMenuBar(menu_bar)
@@ -1064,7 +1065,7 @@ class FolderCopyApp(QWidget):
             with open(full_path, "w", encoding="utf-8") as f:
                 command = f'{base_command} -Backend="{server}" -Backend_ssl=yes -Backend_root_cert=""'
                 f.write(command)
-            print(f"BAT 파일 생성됨: {full_path}")
+            #print(f"BAT 파일 생성됨: {full_path}")
 
     def show_last_file_info(self):
         print(f'show_last_file_info starttime {datetime.now()}')
@@ -1098,10 +1099,25 @@ class FolderCopyApp(QWidget):
 
         print(f'show_last_file_info endtime {datetime.now()}')
 
+    def run_quickbuild_updater(self):
+        '''
+        Run the QuickBuild_updater.exe with the --silent flag
+        '''
+        try:
+            if os.path.exists("QuickBuild_updater.exe"):
+                subprocess.call(["QuickBuild_updater.exe", "--silent"])
+                QMessageBox.information(self, "업데이트 실행", "QuickBuild_updater.exe가 성공적으로 실행되었습니다.")
+            else:
+                QMessageBox.critical(self, "오류", "QuickBuild_updater.exe 파일이 존재하지 않습니다.")
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"업데이트 실행 중 오류가 발생했습니다: {str(e)}")
+
     def execute_test(self):
         dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
         #self.generate_backend_bat_files(servers,dest_path)
         self.show_last_file_info()
+
+    
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):
