@@ -1100,17 +1100,21 @@ class FolderCopyApp(QWidget):
         print(f'show_last_file_info endtime {datetime.now()}')
 
     def run_quickbuild_updater(self):
-        '''
-        Run the QuickBuild_updater.exe with the --silent flag
-        '''
-        try:
-            if os.path.exists("QuickBuild_updater.exe"):
-                subprocess.call(["QuickBuild_updater.exe", "--silent"])
-                QMessageBox.information(self, "업데이트 실행", "QuickBuild_updater.exe가 성공적으로 실행되었습니다.")
-            else:
-                QMessageBox.critical(self, "오류", "QuickBuild_updater.exe 파일이 존재하지 않습니다.")
-        except Exception as e:
-            QMessageBox.critical(self, "오류", f"업데이트 실행 중 오류가 발생했습니다: {str(e)}")
+
+        if os.path.exists("QuickBuild_updater.exe"):
+            proc = subprocess.call(["QuickBuild_updater.exe"])
+        else:
+            proc = subprocess.call([sys.executable, "updater.py"])
+
+        # try:
+        #     #proc = subprocess.Popen([sys.executable, "updater.py"])
+        #     time.sleep(1)
+        #     if proc.poll() is not None:
+        #         QMessageBox.critical(self, "테스트 실패", "notepad.exe가 즉시 종료되었습니다.")
+        #     else:
+        #         QMessageBox.information(self, "테스트 성공", "notepad.exe가 정상 실행되었습니다.")
+        # except Exception as e:
+        #     QMessageBox.critical(self, "실행 오류", f"오류:\n{e}")
 
     def execute_test(self):
         dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
