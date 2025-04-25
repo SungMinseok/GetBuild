@@ -651,15 +651,22 @@ class FolderCopyApp(QWidget):
         if self.checkbox_reservation.isChecked():
             current_time = QTime.currentTime()
             set_time = self.time_edit.time()
+
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
                 now = datetime.now()
 
-                # 이전에 실행한 적이 있다면, 같은 분 안에서는 실행하지 않음
+                # ✅ 주말이면 실행 안 함
+                if now.weekday() >= 5:  # 5 = 토요일, 6 = 일요일
+                    print("주말에는 예약 실행을 건너뜁니다.")
+                    return
+
+                # ✅ 이전에 실행한 적 있으면 건너뜀
                 if self.last_reserved_time:
                     if now.strftime("%Y-%m-%d %H:%M") == self.last_reserved_time.strftime("%Y-%m-%d %H:%M"):
                         print(f"예약 시간 {self.last_reserved_time.strftime('%Y-%m-%d %H:%M')}에 이미 실행됨")
-                        return  # ⛔ 같은 예약 시간 내 이미 실행됨
-                    
+                        return
+
+                self.last_reserved_time = now
                 self.checkbox_reservation.setChecked(False)
                 self.isReserved = True
                 self.execute_copy(refresh=True)
