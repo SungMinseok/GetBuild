@@ -1,5 +1,6 @@
 1.vscode로 수정사항 sync
 2.build.bat실행하여 신규 quickbuild.zip 생성 확인
+2.5.vscode에서 version 커밋 및 싱크
 3.git_release.py 실행하여 릴리즈 신규 업데이트 확인
 
 
