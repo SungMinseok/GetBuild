@@ -9,6 +9,7 @@ import os
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 import requests
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 
 # def start_driver():
 #     #driver_name = fr"C:\chromedriver-win64\chromedriver.exe"
@@ -460,6 +461,174 @@ def aws_delete(driver,revision,zip_path,aws_links):
         driver.implicitly_wait(5)
 
 
+def run_teamcity(driver, url_link='https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects', branch='game', isDebug = False):
+    
+    if driver == None :
+        driver = start_driver()
+        driver.implicitly_wait(10)
+        driver.get(url_link)
+
+        # driver.implicitly_wait(10)
+        # try:
+        #     driver.find_element(By.XPATH,'//*[@id="social-oidc"]').click()
+        # except:
+        #     print('pass login...')
+        #     pass
+    #driver.implicitly_wait(10)
+    #RUN
+    #driver.find_element(By.XPATH,'//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button').click()
+    # wait = WebDriverWait(driver, 10)
+    # button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button')))
+    # button.click()
+    # driver.implicitly_wait(5) # 
+    # time.sleep(1)
+
+    wait = WebDriverWait(driver, 10)
+    for _ in range(3):  # 최대 3번 재시도
+        try:
+            button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button')))
+            button.click()
+            break
+        except StaleElementReferenceException:
+            print("StaleElementReferenceException 발생, 버튼을 다시 찾습니다.")
+            continue
+        except TimeoutException:
+            print("버튼을 찾지 못했습니다.")
+            break
+
+    driver.find_element(By.XPATH,'//*[@id="tab-0"]/p/a').click()
+    #time.sleep(3)
+    driver.implicitly_wait(5) #
+
+    driver.find_element(By.XPATH,'//*[@id="moveToTop"]').click()
+    #time.sleep(3)
+    driver.implicitly_wait(5) #
+
+
+    driver.find_element(By.XPATH,'//*[@id="tab-2"]/p/a').click()
+    #time.sleep(3)
+    driver.implicitly_wait(5) #
+
+    #3초 대기
+    #time.sleep(3)
+    #
+    driver.find_element(By.XPATH,'//*[@id="runBranchSelector_container"]/span/button/span[3]/span').click()
+    driver.implicitly_wait(5) #
+    
+    #driver.find_element(By.XPATH,'//*[@id="runBranchSelector_container"]/span/button/span[3]/span').click()
+    #driver.find_element(By.XPATH,'/html/body/div[110]/div/div/div[1]/div/div/input').send_keys(branch)
+    #branch입력
+    wait = WebDriverWait(driver, 10)
+    input_box = wait.until(EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Filter branches"]')))
+    input_box.send_keys(branch)
+    #driver.implicitly_wait(5) #
+    wait = WebDriverWait(driver, 10)
+    button = wait.until(EC.element_to_be_clickable((By.XPATH, f'//span[@class="ring-list-label" and @title="{branch}"]')))
+
+    button.click()
+
+    time.sleep(3)
+    driver.find_element(By.XPATH,'//*[@id="tab-3"]/p/a').click()
+    driver.implicitly_wait(5) #
+
+    #dev 해제, Test 추가가
+    # wait = WebDriverWait(driver, 10)
+    # button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[2]/div[4]/div[1]/div/div[5]/form[2]/div/div[2]/div[1]/div[2]/div[3]/table/tbody[3]/tr[6]/td[2]/div/div/div/div/div/div[3]/span/input[1]')))
+    # button.click()
+
+    driver.find_element(By.XPATH,'//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_2"]').click()
+    driver.find_element(By.XPATH,'//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]').click()
+    driver.implicitly_wait(5) #
+
+    driver.find_element(By.XPATH,'//*[@id="parameter_build_docker_2083990112"]').click()
+    driver.implicitly_wait(5) #
+
+    driver.find_element(By.XPATH,'//*[@id="parameter_build_zip_1402101855"]').click()
+    driver.implicitly_wait(5) #
+
+    driver.find_element(By.XPATH,'//*[@id="parameter_build_zip_by_build_type_587265756"]').click()
+    driver.implicitly_wait(5) #
+
+    driver.find_element(By.XPATH,'//*[@id="parameter_upload_aws_s3_192415550"]').click()
+    driver.implicitly_wait(5) #
+
+    driver.find_element(By.XPATH,'//*[@id="parameter_upload_aws_s3_bucket_495183514"]').send_keys('SEL')
+
+    if not isDebug:
+        driver.find_element(By.XPATH,'//*[@id="runCustomBuildButton"]').click()
+        return
+    #driver.find_element(By.XPATH,'//*[@id="runCustomBuildButton"]').click()
+    
+
+
+
+    #SELECT ALL
+#     driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[1]").click()
+
+    
+#     driver.implicitly_wait(5)
+#     #돋보기
+#     driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/div/button').click()
+#     time.sleep(0.5)
+#     driver.implicitly_wait(5)
+
+#     #브랜치입력
+#     time.sleep(1.5)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(branch)
+#     time.sleep(1.5)
+#     #추후 소문자/대문자 구분해서 정확히 일치하는 것 클릭하도록 변경 필요
+# # /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span
+# # /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span
+# # /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[5]/span
+#     #driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[2]/span').click()
+        
+#         # branch 값과 일치하는 요소 클릭
+#     for x in range(1, 10):  # 예시: 1부터 9까지 반복
+#         try:
+#             element = driver.find_element(By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')
+#             if element.text == branch:
+#                 element.click()
+#                 break
+#         except Exception as e:
+#             print(f"요소 {x} 찾기 실패: {e}")
+    
+    
+    
+    
+#     time.sleep(0.5)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+    
+#     #TAG 입력
+#     time.sleep(1)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{branch}-{buildType}_{revision}')
+#     time.sleep(1)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span').click()
+#     time.sleep(0.5)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+
+#     #Build config 체크박스 클릭
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]').click()
+#     time.sleep(0.5)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+
+    
+#     #SELCET 클릭
+#     time.sleep(0.5)
+#     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button').click()
+
+#     #APPLY 클릭
+#     time.sleep(0.5)
+#     driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[3]').click()
+    
+#     if not isDebug :
+#         #팝업 내 OK 버튼 클릭
+#         time.sleep(0.5)
+#         driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
+#         #os.system("pause")
+
+
+
+
 
 def aws_stop():
     
@@ -483,8 +652,8 @@ def aws_stop():
     os.system("pause")
     
 if __name__ == '__main__':
-    
-
+    #driver = start_driver()
+    run_teamcity(None,branch='Ftr_hideoutstriketeam',isDebug=True)
     # zip_path = fr'C:\mybuild\CompileBuild_DEV_game_SEL114483_158662\WindowsServer.zip'
     # aws_link = "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2"
 

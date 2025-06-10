@@ -22,6 +22,7 @@ servers = [
     "sel-game4-unrealclientproxy.pbb-qa.pubg.io:443",
     "sel-game5-unrealclientproxy.pbb-qa.pubg.io:443",
     "sel-game6-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-progression-unrealclientproxy.pbb-qa.pubg.io:443",
     "10.160.2.239:5259"
 ]
 
@@ -215,7 +216,7 @@ class FolderCopyApp(QWidget):
         self.checkbox_reservation = QCheckBox('예약 실행', self)
         self.combo_box2 = QComboBox(self)
         #self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
-        self.combo_box2.addItems(['클라복사','전체복사','서버업로드','서버패치','서버삭제','서버복사','TEST'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','TEST'])
         self.combo_box2.setFixedWidth(120)
         self.combo_box2.currentTextChanged.connect(lambda: self.handle_combo_change(self.combo_box2.currentText()))
         self.copy_button = QPushButton('지금 실행', self)
@@ -640,6 +641,19 @@ class FolderCopyApp(QWidget):
             QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
 
 
+    def run_teamcity(self):
+        log_execution()
+        try:
+            #target_folder = self.combo_box.currentText()
+            # buildType = self.combo_box.currentText().split('_')[1]
+            # revision = self.extract_revision_number(target_folder)
+            # aws_url = self.input_box5.text()
+            branch = self.input_box4.text()
+            aws.run_teamcity(driver=None,branch=branch)
+
+
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
 
     def open_folder(self, path):
         try:
@@ -697,6 +711,8 @@ class FolderCopyApp(QWidget):
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',True)
         elif reservation_option == "SEL패치(구)":
             self.aws_update_directly()
+        elif reservation_option == "빌드굽기":
+            self.run_teamcity()
         elif reservation_option == "TEST":
             self.execute_test()
             #self.show_build_time_info()
