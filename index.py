@@ -532,10 +532,12 @@ class FolderCopyApp(QWidget):
 
             self.progress_dialog.setValue(100)
             log_execution()
-            QMessageBox.information(self, 'Success', 'Folder copied successfully.')
+            #QMessageBox.information(self, 'Success', 'Folder copied successfully.')
+            self.show_auto_close_message('Success', 'Folder copied successfully.')
         except Exception as e:
             log_execution()
-            QMessageBox.critical(self, 'Error', f'Failed to copy folder: {str(e)}')
+            #QMessageBox.critical(self, 'Error', f'Failed to copy folder: {str(e)}')
+            self.show_auto_close_message('Error', f'Failed to copy folder: {str(e)}')
 
     def zip_folder(self, dest_folder,target_folder, target_name, update:bool):
         '''
@@ -1142,9 +1144,33 @@ class FolderCopyApp(QWidget):
     def execute_test(self):
         dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
         #self.generate_backend_bat_files(servers,dest_path)
-        self.show_last_file_info()
+        #self.show_last_file_info()
+        # Show the QMessageBox
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle("Success")
+        message_box.setText("Folder copied successfully.")
+        message_box.setStandardButtons(QMessageBox.Close)  # 닫기 버튼 유지
+        message_box.show()
 
-    
+        # Set a QTimer to close the QMessageBox after 1 minute
+        QTimer.singleShot(1000, lambda: message_box.done(QMessageBox.Close))
+
+    def show_auto_close_message(self, title, message, timeout=60000):
+        """
+        Show a QMessageBox with a close button that automatically closes after a timeout.
+
+        :param title: Title of the message box
+        :param message: Message to display
+        :param timeout: Time in milliseconds before the message box closes automatically (default: 60000ms)
+        """
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(title)
+        message_box.setText(message)
+        message_box.setStandardButtons(QMessageBox.Close)  # 닫기 버튼 유지
+        message_box.show()
+
+        # Set a QTimer to close the QMessageBox after the specified timeout
+        QTimer.singleShot(timeout, lambda: message_box.done(QMessageBox.Close))
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):
