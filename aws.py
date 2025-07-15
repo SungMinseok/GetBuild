@@ -328,7 +328,7 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
 
     #APPLY 클릭
     time.sleep(0.5)
-    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[2]/div/div[1]/div/form/div/button[3]').click()
+    driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]').click()
     
     if not isDebug :
         #팝업 내 OK 버튼 클릭
