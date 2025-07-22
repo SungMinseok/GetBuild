@@ -10,3 +10,6 @@ backup
 *.zip
 .env
 config.json
+config2.json
+settings*.json
+branch_settings.json
