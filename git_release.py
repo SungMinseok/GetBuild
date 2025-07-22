@@ -1,10 +1,10 @@
 import os
 import subprocess
 import sys
-import tkinter as tk
-from tkinter import messagebox
 import requests
 import json
+
+from PyQt5.QtWidgets import QApplication, QMessageBox, QInputDialog
 
 # ────── 설정 로딩 ──────
 with open("config.json", "r") as f:
@@ -15,21 +15,29 @@ REPO_OWNER = "SungMinseok"
 REPO_NAME = "GetBuild"
 FILE_PATH = "QuickBuild.zip"
 
-# ────── UI ──────
+# ────── UI (PyQt5) ──────
+def get_qt_app():
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+    return app
+
 def show_popup(title, message):
-    root = tk.Tk()
-    root.withdraw()
-    messagebox.showwarning(title, message)
+    app = get_qt_app()
+    QMessageBox.warning(None, title, message)
 
 def ask_release_type():
-    root = tk.Tk()
-    root.withdraw()
-    return messagebox.askyesno(
+    app = get_qt_app()
+    reply = QMessageBox.question(
+        None,
         "릴리스 방식 선택",
         "새로운 버전으로 새 태그를 생성하시겠습니까?\n\n"
         "예 (Yes): version.txt 기반으로 새 릴리스 생성\n"
-        "아니오 (No): 기존 릴리스 zip 삭제 후 덮어쓰기 (태그는 새로 생성)"
+        "아니오 (No): 기존 릴리스 zip 삭제 후 덮어쓰기 (태그는 새로 생성)",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.Yes
     )
+    return reply == QMessageBox.Yes
 
 # ────── Git 관련 ──────
 def run_git_command(args):
