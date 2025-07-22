@@ -7,7 +7,7 @@ import json
 from PyQt5.QtWidgets import QApplication, QMessageBox, QInputDialog
 
 # ────── 설정 로딩 ──────
-with open("config.json", "r") as f:
+with open("token.json", "r") as f:
     config = json.load(f)
 
 GITHUB_TOKEN = config.get("token")
