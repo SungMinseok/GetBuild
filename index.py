@@ -22,6 +22,7 @@ servers = [
     "sel-game4-unrealclientproxy.pbb-qa.pubg.io:443",
     "sel-game5-unrealclientproxy.pbb-qa.pubg.io:443",
     "sel-game6-unrealclientproxy.pbb-qa.pubg.io:443",
+    "sel-hideout-unrealclientproxy.pbb-qa.pubg.io:443",
     "sel-progression-unrealclientproxy.pbb-qa.pubg.io:443",
     "10.160.2.239:5259"
 ]
@@ -31,12 +32,14 @@ class FolderCopyApp(QWidget):
     def __init__(self):
         super().__init__()
         self.settings_file = 'settings.json'
+        self.config_file = 'config.json'
         self.initUI()
-        self.resize(850, self.height())
+        self.resize(950, 164)
         self.first_size = self.width(), self.height()
         self.load_settings()
         self.isReserved = False
         self.last_reserved_time = None
+        print(self.first_size)
 
     def initUI(self):
         # Apply the custom stylesheet
@@ -184,11 +187,19 @@ class FolderCopyApp(QWidget):
         # h_layout2_1.addWidget(self.folder_button2_1)
 
         # Third row
-        self.new_label_3 = QLabel('빌드명', self)
+        # combo_box_buildname > combo_box_buildname
+        self.new_label_3 = QLabel('빌드명(;로 구분)', self)
         self.new_label_3.setFixedWidth(120)
-        self.input_box4 = QLineEdit(self)
-        self.input_box4.setPlaceholderText('스트링필터(;로 구분)')
-        self.input_box4.setFixedWidth(200)
+        #self.combo_box_buildname = QLineEdit(self)
+        self.combo_box_buildname = QComboBox(self)
+        #self.combo_box_buildname.setPlaceholderText('스트링필터')
+        self.combo_box_buildname.setFixedWidth(200)
+        self.pushbutton_buildname = QPushButton('+', self)
+        self.pushbutton_buildname.setFixedWidth(25)
+        self.pushbutton_buildname.clicked.connect(lambda: self.show_dropdown_input_dialog(self.combo_box_buildname, '빌드명 추가', 'buildnames'))
+        self.pushbutton_buildname_delete = QPushButton('-', self)
+        self.pushbutton_buildname_delete.setFixedWidth(25)
+        self.pushbutton_buildname_delete.clicked.connect(lambda: self.delete_current_combobox(self.combo_box_buildname, 'buildnames'))
         self.combo_box = QComboBox(self)#
         self.combo_box.currentTextChanged.connect(self.update_window_title)
         self.open_folder_button3 = QPushButton('📂', self)        
@@ -202,7 +213,9 @@ class FolderCopyApp(QWidget):
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision2)
         
         h_layout3.addWidget(self.new_label_3)
-        h_layout3.addWidget(self.input_box4)
+        h_layout3.addWidget(self.combo_box_buildname)
+        h_layout3.addWidget(self.pushbutton_buildname)
+        h_layout3.addWidget(self.pushbutton_buildname_delete)
         h_layout3.addWidget(self.combo_box)
         h_layout3.addWidget(self.open_folder_button3)
         h_layout3.addWidget(self.capa_button)
@@ -213,10 +226,10 @@ class FolderCopyApp(QWidget):
         self.new_label_4.setFixedWidth(120)
         self.time_edit = QTimeEdit(self)
         self.time_edit.setDisplayFormat("HH:mm")
-        self.checkbox_reservation = QCheckBox('예약 실행', self)
+        self.checkbox_reservation = QCheckBox('예약 실행(주말 제외 해당 시각에 실행)', self)
         self.combo_box2 = QComboBox(self)
         #self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
-        self.combo_box2.addItems(['클라복사','전체복사','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','TEST'])
+        self.combo_box2.addItems(['클라복사','전체복사','서버업로드및패치','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','TEST'])
         self.combo_box2.setFixedWidth(120)
         self.combo_box2.currentTextChanged.connect(lambda: self.handle_combo_change(self.combo_box2.currentText()))
         self.copy_button = QPushButton('지금 실행', self)
@@ -313,7 +326,7 @@ class FolderCopyApp(QWidget):
 
         if text == '서버삭제' :
             self.detail_container.show()
-        elif text == '서버업로드' or text == '서버패치' : 
+        elif text == '서버업로드' or text == '서버패치' or text == '서버업로드및패치' : 
             self.aws_container.show()
 
     def adjust_detail_conainer(self):
@@ -343,7 +356,7 @@ class FolderCopyApp(QWidget):
         
         self.combo_box.clear()
         folder_path = self.buildSource_comboBox.currentText()
-        filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+        filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
         if os.path.isdir(folder_path):
             folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
@@ -371,7 +384,7 @@ class FolderCopyApp(QWidget):
 
         self.combo_box.clear()
         folder_path = self.buildSource_comboBox.currentText()
-        filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+        filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
         check_file_count = False # 최신순으로 파일 개수 체크 후, 조건을 만족하는 순간 TRUE, 더 이상 체크하지 않음
 
@@ -434,7 +447,7 @@ class FolderCopyApp(QWidget):
             self.load_stylesheet(fr"qss/red.qss")
             self.combo_box.clear()
             folder_path = self.buildSource_comboBox.currentText()
-            filter_texts = self.input_box4.text().split(';') if self.input_box4.text() else []
+            filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
             if not os.path.isdir(folder_path):
                 QMessageBox.critical(self, 'Error', 'Source path is not a valid directory.')
@@ -635,7 +648,10 @@ class FolderCopyApp(QWidget):
             buildType = self.combo_box.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
             aws_url = self.input_box5.text()
-            branch = self.input_box4.text()
+            branch = self.input_box6.text().strip()
+            if not branch:
+                branch = self.combo_box_buildname.currentText().strip()
+
             aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False)
 
 
@@ -650,7 +666,7 @@ class FolderCopyApp(QWidget):
             # buildType = self.combo_box.currentText().split('_')[1]
             # revision = self.extract_revision_number(target_folder)
             # aws_url = self.input_box5.text()
-            branch = self.input_box4.text()
+            branch = self.combo_box_buildname.currentText()
             aws.run_teamcity(driver=None,branch=branch)
 
 
@@ -709,6 +725,9 @@ class FolderCopyApp(QWidget):
             self.aws_update_container()
         elif reservation_option == "서버업로드":
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',False)
+        elif reservation_option == "서버업로드및패치":
+            self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',False)
+            self.aws_update_container()
         elif reservation_option == "서버패치(구)":
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',True)
         elif reservation_option == "SEL패치(구)":
@@ -731,7 +750,9 @@ class FolderCopyApp(QWidget):
                 self.input_box2.setText(settings.get('input_box2', ''))
                 #self.input_box2_1.setText(settings.get('input_box2_1', ''))
                 self.combo_box.addItems(settings.get('combo_box', []))
-                self.input_box4.setText(settings.get('input_box4', ''))
+                self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
+                self.combo_box_buildname.addItems(settings.get('buildnames', []))
+                self.combo_box_buildname.setCurrentIndex(0)
                 self.input_box5.setText(settings.get('input_box5', ''))
                 time_value = settings.get('time_edit', '')
             if time_value:
@@ -743,7 +764,7 @@ class FolderCopyApp(QWidget):
             'input_box2': self.input_box2.text(),
 #            'input_box2_1': self.input_box2_1.text(),
             'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())],
-            'input_box4': self.input_box4.text(),
+            'combo_box_buildname': self.combo_box_buildname.currentText(),
             'input_box5': self.input_box5.text(),
             'time_edit': self.time_edit.time().toString('HH:mm'),
         }
@@ -1013,7 +1034,7 @@ class FolderCopyApp(QWidget):
 
 
     def closeEvent(self, event):
-        self.save_settings()
+        #self.save_settings()
         event.accept()
 
     def set_loading_state(self, is_loading):
@@ -1059,7 +1080,7 @@ class FolderCopyApp(QWidget):
             buildType = self.combo_box.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
             aws_url = self.input_box5.text()
-            branch = self.input_box4.text()
+            branch = self.combo_box_buildname.currentText()
             self.setWindowTitle(f'{branch}-{buildType}_{revision}')
         except:
             pass
@@ -1080,8 +1101,8 @@ class FolderCopyApp(QWidget):
         :param output_dir: bat 파일이 저장될 디렉토리 (기본: 현재 디렉토리)
         :param client_path: 실행할 클라이언트 경로 (기본: WindowsClient\Client.exe)
         """
-        base_command = f'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
-
+        #base_command = f'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
+        base_command = fr'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
         for server in server_list:
             sanitized_name = server.replace(":", "_").replace(".", "_")
             bat_filename = f"{sanitized_name}.bat"
@@ -1171,6 +1192,89 @@ class FolderCopyApp(QWidget):
 
         # Set a QTimer to close the QMessageBox after the specified timeout
         QTimer.singleShot(timeout, lambda: message_box.done(QMessageBox.Close))
+
+    def show_dropdown_input_dialog(self, dropdown, title, key):
+        """
+        buildname 입력 팝업을 띄우고, 입력값을 config.json에 저장 후 드롭다운을 새로고침합니다.
+        :param dropdown: QComboBox 등 드롭다운 위젯
+        """
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QDialogButtonBox, QLabel
+        import json
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        layout = QVBoxLayout(dialog)
+        #label = QLabel("빌드명을 입력하세요:", dialog)
+        #layout.addWidget(label)
+        input_box = QLineEdit(dialog)
+        layout.addWidget(input_box)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        layout.addWidget(buttons)
+
+        def on_accept():
+            buildname = input_box.text().strip()
+            if buildname:
+                # settings.json에 저장
+                config_path = "settings.json"
+                try:
+                    if os.path.exists(config_path):
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            config = json.load(f)
+                    else:
+                        config = {}
+                    buildnames = config.get(key, [])
+                    if buildname not in buildnames:
+                        buildnames.append(buildname)
+                        config[key] = buildnames
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            json.dump(config, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    QMessageBox.critical(self, "오류", f"config.json 저장 실패: {e}")
+                # 드롭다운 새로고침
+                dropdown.clear()
+                dropdown.addItems(config.get(key, []))
+                dropdown.setCurrentText(buildname)
+            dialog.accept()
+
+        buttons.accepted.connect(on_accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog.exec_()
+
+    def delete_current_combobox(self, dropdown, key):
+        """
+        현재 선택된 빌드명을 settings.json에서 삭제하고 드롭다운을 새로고침합니다.
+        :param dropdown: QComboBox 등 드롭다운 위젯
+        """
+        import json
+
+        buildname = dropdown.currentText().strip()
+        if not buildname:
+            QMessageBox.warning(self, "알림", "삭제할 빌드명이 선택되어 있지 않습니다.")
+            return
+
+        config_path = "settings.json"
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            else:
+                config = {}
+            buildnames = config.get(key, [])
+            if buildname in buildnames:
+                buildnames.remove(buildname)
+                config[key] = buildnames
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, ensure_ascii=False, indent=2)
+            else:
+                QMessageBox.information(self, "알림", "해당 빌드명이 목록에 없습니다.")
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"settings.json 저장 실패: {e}")
+
+        # 드롭다운 새로고침
+        dropdown.clear()
+        dropdown.addItems(config.get(key, []))
+        if buildnames:
+            dropdown.setCurrentIndex(0)
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):
