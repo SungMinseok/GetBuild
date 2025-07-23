@@ -758,8 +758,9 @@ class FolderCopyApp(QWidget):
             if time_value:
                 self.time_edit.setTime(QTime.fromString(time_value, 'HH:mm'))
 
-        if os.path.exists('branch_settings.json'):
-            with open(self.settings_file, 'r') as file:
+        branch_settings_file = 'branch_settings.json'
+        if os.path.exists(branch_settings_file):
+            with open(branch_settings_file, 'r') as file:
                 settings = json.load(file)
                 self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
                 self.combo_box_buildname.addItems(settings.get('buildnames', []))
