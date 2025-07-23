@@ -750,13 +750,20 @@ class FolderCopyApp(QWidget):
                 self.input_box2.setText(settings.get('input_box2', ''))
                 #self.input_box2_1.setText(settings.get('input_box2_1', ''))
                 self.combo_box.addItems(settings.get('combo_box', []))
-                self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
-                self.combo_box_buildname.addItems(settings.get('buildnames', []))
-                self.combo_box_buildname.setCurrentIndex(0)
+                # self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
+                # self.combo_box_buildname.addItems(settings.get('buildnames', []))
+                # self.combo_box_buildname.setCurrentIndex(0)
                 self.input_box5.setText(settings.get('input_box5', ''))
                 time_value = settings.get('time_edit', '')
             if time_value:
                 self.time_edit.setTime(QTime.fromString(time_value, 'HH:mm'))
+
+        if os.path.exists('branch_settings.json'):
+            with open(self.settings_file, 'r') as file:
+                settings = json.load(file)
+                self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
+                self.combo_box_buildname.addItems(settings.get('buildnames', []))
+                self.combo_box_buildname.setCurrentIndex(0)
 
     def save_settings(self):
         settings = {
@@ -1195,7 +1202,7 @@ class FolderCopyApp(QWidget):
 
     def show_dropdown_input_dialog(self, dropdown, title, key):
         """
-        buildname 입력 팝업을 띄우고, 입력값을 config.json에 저장 후 드롭다운을 새로고침합니다.
+        buildname 입력 팝업을 띄우고, 입력값을 branch_settings.json에 저장 후 드롭다운을 새로고침합니다.
         :param dropdown: QComboBox 등 드롭다운 위젯
         """
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QDialogButtonBox, QLabel
@@ -1215,7 +1222,7 @@ class FolderCopyApp(QWidget):
             buildname = input_box.text().strip()
             if buildname:
                 # settings.json에 저장
-                config_path = "settings.json"
+                config_path = "branch_settings.json"
                 try:
                     if os.path.exists(config_path):
                         with open(config_path, "r", encoding="utf-8") as f:
@@ -1229,7 +1236,7 @@ class FolderCopyApp(QWidget):
                         with open(config_path, "w", encoding="utf-8") as f:
                             json.dump(config, f, ensure_ascii=False, indent=2)
                 except Exception as e:
-                    QMessageBox.critical(self, "오류", f"config.json 저장 실패: {e}")
+                    QMessageBox.critical(self, "오류", f"branch_settings.json 저장 실패: {e}")
                 # 드롭다운 새로고침
                 dropdown.clear()
                 dropdown.addItems(config.get(key, []))
