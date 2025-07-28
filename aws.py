@@ -385,20 +385,29 @@ def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildT
 
     #Input File
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[4]/div[2]/input').send_keys(zip_path)
+
+    #Upload 버튼 클릭
     driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[5]/div/button').click()
     
     driver.implicitly_wait(5)
     #time.sleep(1)
     #for i in range(0,10):
-    count = driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/form/div[6]/div/div/div[2]/span')
-    while True: 
-        progress_value = float(count.get_attribute("aria-valuenow"))
-        print(progress_value)
+    import re
+    count = driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/form/div[6]/div/div/div[2]')
+    while True:
+        text = count.text  # 예: '11.17%'
+        # 소수점 포함 숫자 추출
+        match = re.findall(r"\d+\.\d+|\d+", text)
+        if match:
+            progress_value = float(match[0])  # 첫 번째 값을 사용
+            print(progress_value)
+            if progress_value >= 100:
+                print("커스텀 업로드 완료")
+                time.sleep(1)
+                break
+        else:
+            print("숫자를 추출하지 못함:", text)
         time.sleep(1)
-        if progress_value >= 100 :
-            print("커스텀 업로드 완료")
-            time.sleep(1)
-            break
 
     #os.system("pause")
     

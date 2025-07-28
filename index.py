@@ -622,7 +622,7 @@ class FolderCopyApp(QWidget):
             branch = self.input_box6.text()
             aws.aws_upload_custom2(None,revision,zip_file,aws_link=aws_url,branch=branch,buildType=buildType)
             if(update):
-                aws.aws_update_custom(None,revision,aws_url,branch=branch)
+                aws.aws_update_custom(None,revision,aws_url,branch=branch) # unused 250728
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
 
@@ -727,6 +727,7 @@ class FolderCopyApp(QWidget):
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',False)
         elif reservation_option == "서버업로드및패치":
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',False)
+            self.show_wait_popup("서버 패치 전 대기합니다.", 1200)  # 5초 대기
             self.aws_update_container()
         elif reservation_option == "서버패치(구)":
             self.zip_folder(self.input_box2.text(),build_fullname,'WindowsServer',True)
@@ -735,7 +736,10 @@ class FolderCopyApp(QWidget):
         elif reservation_option == "빌드굽기":
             self.run_teamcity()
         elif reservation_option == "TEST":
-            self.execute_test()
+            print('TEST 실행')
+            self.show_wait_popup("서버 패치 전 대기합니다.", 1200)  # 5초 대기 
+            print('TEST 실행 완료')
+            #self.execute_test()
             #self.show_build_time_info()
         #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
         if self.isReserved :
@@ -1283,6 +1287,47 @@ class FolderCopyApp(QWidget):
         dropdown.addItems(config.get(key, []))
         if buildnames:
             dropdown.setCurrentIndex(0)
+
+    def show_wait_popup(self, message, seconds):
+        """
+        지정한 초(seconds) 동안 팝업을 띄우고, 남은 시간과 프로그레스바를 표시합니다.
+        """
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
+        dialog = QDialog(self)
+        dialog.setWindowTitle("잠시 대기")
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel(f"{message}", dialog)
+        layout.addWidget(label)
+
+        time_label = QLabel(f"남은 시간: {seconds}초", dialog)
+        layout.addWidget(time_label)
+
+        progress_bar = QProgressBar(dialog)
+        progress_bar.setMinimum(0)
+        progress_bar.setMaximum(seconds)
+        progress_bar.setValue(seconds)
+        layout.addWidget(progress_bar)
+
+        dialog.setModal(True)
+
+        # 내부 상태
+        self._wait_seconds_left = seconds
+
+        def update_progress():
+            self._wait_seconds_left -= 1
+            progress_bar.setValue(self._wait_seconds_left)
+            time_label.setText(f"남은 시간: {self._wait_seconds_left}초")
+            if self._wait_seconds_left <= 0:
+                timer.stop()
+                dialog.accept()
+
+        timer = QTimer(dialog)
+        timer.timeout.connect(update_progress)
+        timer.start(1000)
+
+        dialog.exec_()
+        timer.stop()
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):
