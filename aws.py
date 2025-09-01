@@ -336,7 +336,10 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
         #팝업 내 OK 버튼 클릭
         time.sleep(0.5)
         driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
-        export_upload_result(aws_link,full_build_name,"aws_apply","pass")
+        try:
+            export_upload_result(aws_link,full_build_name,"aws_apply","pass")
+        except:
+            print("export_upload_result error")
 
         #os.system("pause")
 
