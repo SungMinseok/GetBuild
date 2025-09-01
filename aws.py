@@ -10,6 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 import requests
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
+from exporter import export_upload_result
 
 # def start_driver():
 #     #driver_name = fr"C:\chromedriver-win64\chromedriver.exe"
@@ -64,6 +65,7 @@ def start_driver():
     return driver
 
 def aws_upload_custom(driver, revision, zip_path, aws_link, branch = 'game'):
+    '''Unused 250728'''
     if driver == None :
 
         driver = start_driver()
@@ -247,7 +249,7 @@ def aws_update_custom(driver,revision,aws_link, branch = 'game'):
 #     driver.find_element(By.XPATH,'/html/body/div[4]/div[1]/div[2]/div/button[1]').click()
 #     #os.system("pause")
 
-def aws_update_container(driver,revision, aws_link, branch = 'game', buildType = 'DEV', isDebug = False):
+def aws_update_container(driver,revision, aws_link, branch = 'game', buildType = 'DEV', isDebug = False, full_build_name = 'none'):
     '''서버패치'''
     
     if branch == "":
@@ -334,10 +336,12 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
         #팝업 내 OK 버튼 클릭
         time.sleep(0.5)
         driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
+        export_upload_result(aws_link,full_build_name,"aws_apply","pass")
+
         #os.system("pause")
 
 
-def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildType = 'DEV'):
+def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildType = 'DEV', full_build_name = 'TEST'):
     '''250204'''
     if driver == None :
         driver = start_driver()
@@ -403,6 +407,7 @@ def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildT
             print(progress_value)
             if progress_value >= 100:
                 print("커스텀 업로드 완료")
+                export_upload_result(aws_link, full_build_name)
                 time.sleep(1)
                 break
         else:
@@ -508,31 +513,22 @@ def run_teamcity(driver, url_link='https://pbbseoul6-w.bluehole.net/buildConfigu
             break
 
     driver.find_element(By.XPATH,'//*[@id="tab-0"]/p/a').click()
-    #time.sleep(3)
-    driver.implicitly_wait(5) #
+    driver.implicitly_wait(5)
 
     driver.find_element(By.XPATH,'//*[@id="moveToTop"]').click()
-    #time.sleep(3)
-    driver.implicitly_wait(5) #
+    driver.implicitly_wait(5)
 
 
     driver.find_element(By.XPATH,'//*[@id="tab-2"]/p/a').click()
-    #time.sleep(3)
-    driver.implicitly_wait(5) #
+    driver.implicitly_wait(5)
 
-    #3초 대기
-    #time.sleep(3)
-    #
     driver.find_element(By.XPATH,'//*[@id="runBranchSelector_container"]/span/button/span[3]/span').click()
-    driver.implicitly_wait(5) #
-    
-    #driver.find_element(By.XPATH,'//*[@id="runBranchSelector_container"]/span/button/span[3]/span').click()
-    #driver.find_element(By.XPATH,'/html/body/div[110]/div/div/div[1]/div/div/input').send_keys(branch)
-    #branch입력
+    driver.implicitly_wait(5) 
+
     wait = WebDriverWait(driver, 10)
     input_box = wait.until(EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Filter branches"]')))
     input_box.send_keys(branch)
-    #driver.implicitly_wait(5) #
+    
     wait = WebDriverWait(driver, 10)
     button = wait.until(EC.element_to_be_clickable((By.XPATH, f'//span[@class="ring-list-label" and @title="{branch}"]')))
 
@@ -543,9 +539,6 @@ def run_teamcity(driver, url_link='https://pbbseoul6-w.bluehole.net/buildConfigu
     driver.implicitly_wait(5) #
 
     #dev 해제, Test 추가가
-    # wait = WebDriverWait(driver, 10)
-    # button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[2]/div[4]/div[1]/div/div[5]/form[2]/div/div[2]/div[1]/div[2]/div[3]/table/tbody[3]/tr[6]/td[2]/div/div/div/div/div/div[3]/span/input[1]')))
-    # button.click()
 
     driver.find_element(By.XPATH,'//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_2"]').click()
     driver.find_element(By.XPATH,'//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]').click()
@@ -554,16 +547,16 @@ def run_teamcity(driver, url_link='https://pbbseoul6-w.bluehole.net/buildConfigu
     driver.find_element(By.XPATH,'//*[@id="parameter_build_docker_2083990112"]').click()
     driver.implicitly_wait(5) #
 
-    driver.find_element(By.XPATH,'//*[@id="parameter_build_zip_1402101855"]').click()
-    driver.implicitly_wait(5) #
+    # driver.find_element(By.XPATH,'//*[@id="parameter_build_zip_1402101855"]').click()
+    # driver.implicitly_wait(5) #
 
-    driver.find_element(By.XPATH,'//*[@id="parameter_build_zip_by_build_type_587265756"]').click()
-    driver.implicitly_wait(5) #
+    # driver.find_element(By.XPATH,'//*[@id="parameter_build_zip_by_build_type_587265756"]').click()
+    # driver.implicitly_wait(5) #
 
-    driver.find_element(By.XPATH,'//*[@id="parameter_upload_aws_s3_192415550"]').click()
-    driver.implicitly_wait(5) #
+    # driver.find_element(By.XPATH,'//*[@id="parameter_upload_aws_s3_192415550"]').click()
+    # driver.implicitly_wait(5) #
 
-    driver.find_element(By.XPATH,'//*[@id="parameter_upload_aws_s3_bucket_495183514"]').send_keys('SEL')
+    # driver.find_element(By.XPATH,'//*[@id="parameter_upload_aws_s3_bucket_495183514"]').send_keys('SEL')
 
     if not isDebug:
         driver.find_element(By.XPATH,'//*[@id="runCustomBuildButton"]').click()
@@ -662,6 +655,10 @@ def aws_stop():
     print(len(title_list))
     os.system("pause")
     
+
+
+
+
 if __name__ == '__main__':
     #driver = start_driver()
     #run_teamcity(None,branch='Ftr_hideoutstriketeam',isDebug=True)

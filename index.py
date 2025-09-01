@@ -2,7 +2,7 @@ import sys
 import os
 import shutil
 import json
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+from PyQt5.QtWidgets import (QSizePolicy, QWidgetAction, QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox, QProgressDialog, QTimeEdit, QCheckBox, QLabel, QMenuBar, QAction, QDialog, QTextEdit)
 from PyQt5.QtCore import (Qt, QTime, QTimer, QUrl, QDateTime)
 from PyQt5.QtGui import QPixmap, QDesktopServices, QIcon
@@ -13,19 +13,7 @@ import aws
 from makelog import *
 import time
 import subprocess
-
-
-servers = [
-    "sel-game-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-game2-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-game3-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-game4-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-game5-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-game6-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-hideout-unrealclientproxy.pbb-qa.pubg.io:443",
-    "sel-progression-unrealclientproxy.pbb-qa.pubg.io:443",
-    "10.160.2.239:5259"
-]
+from exporter import export_upload_result
 
 
 class FolderCopyApp(QWidget):
@@ -44,73 +32,11 @@ class FolderCopyApp(QWidget):
     def initUI(self):
         # Apply the custom stylesheet
         self.setWindowIcon(QIcon('ico.ico'))
-        self.load_stylesheet(fr"qss\default.qss")
-        #self.load_stylesheet(fr"qss/red.qss")
-#         self.setStyleSheet("""
-#     QWidget {
-#         background-color: #1a1a1a;
-#         color: #ffffff;
-#         border-radius: 10px;
-#         border: 1px solid #333333;
-#         font-family: 'Malgun Gothic', sans-serif;
-#         font-size: 11pt;
-#         font-weight: bold
-#     }
+        self.load_stylesheet(fr"qss\pbb.qss")
 
-#     QLineEdit {
-#         background-color: #333333;
-#         border: 1px solid #555555;
-#         padding: 5px;
-#         border-radius: 5px;
-#         font-family: 'Malgun Gothic', sans-serif;
-#     }
+        button_style0 = "QPushButton {background-color: #0D2038; border: 1px solid #2190FF; color: #CFF8FF;} QPushButton:hover {background-color: #19416D;}"
 
-#     QPushButton {
-#         background-color: #444444;
-#         border: 1px solid #666666;
-#         border-radius: 5px;
-#         padding: 5px;
-#         font-family: 'Malgun Gothic', sans-serif;
-#     }
-
-#     QPushButton:hover {
-#         background-color: #555555;
-#     }
-
-#     QPushButton:pressed {
-#         background-color: #666666;
-#     }
-
-#     QComboBox {
-#         background-color: #333333;
-#         border: 1px solid #555555;
-#         padding: 5px;
-#         border-radius: 5px;
-#         font-family: 'Malgun Gothic', sans-serif;
-#     }
-
-#     QCheckBox {
-#         background-color: transparent;
-#         border: none;
-#         font-family: 'Malgun Gothic', sans-serif;
-#     }
-
-#     QProgressDialog {
-#         background-color: #1a1a1a;
-#         color: #ffffff;
-#         border-radius: 10px;
-#         border: 1px solid #333333;
-#         font-family: 'Malgun Gothic', sans-serif;
-#     }
-
-#     QTimeEdit {
-#         background-color: #333333;
-#         border: 1px solid #555555;
-#         padding: 5px;
-#         border-radius: 5px;
-#         font-family: 'Malgun Gothic', sans-serif;
-#     }
-# """)
+        
         # Create a menu bar //lambda event: QDesktopServices.openUrl(QUrl("https://github.com/SungMinseok/GetBuild/issues"))
         menu_bar = QMenuBar(self)
         about_menu = menu_bar.addMenu("메뉴")
@@ -123,6 +49,17 @@ class FolderCopyApp(QWidget):
         about_action3 = QAction("Check Update", self)
         about_action3.triggered.connect(self.run_quickbuild_updater)
         about_menu.addActions([about_action,about_action1,about_action2,about_action3])
+
+        funcMenu = menu_bar.addMenu("ETC")
+        funcMenuAction0 = QAction("Open config", self)
+        funcMenuAction0.triggered.connect(lambda: self.open_file(self.config_file))
+        funcMenu.addActions([funcMenuAction0])
+
+        # 메뉴바 우측에 버전 텍스트 표시
+        version_label = QLabel(f"Version: {self.read_version_from_file()}", self)
+        version_label.setStyleSheet("color: #cccccc; margin-right: 10px; font-weight: bold; font-size: 10pt;")
+        menu_bar.setCornerWidget(version_label, Qt.TopRightCorner)
+
 
         layout = QVBoxLayout()
         layout.setMenuBar(menu_bar)
@@ -208,7 +145,7 @@ class FolderCopyApp(QWidget):
         self.capa_button = QPushButton('ℹ️', self)
         self.capa_button.setFixedWidth(25)
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
-        self.refresh_button = QPushButton('🔍', self)
+        self.refresh_button = QPushButton('🔃', self)
         self.refresh_button.setFixedWidth(25)
         self.refresh_button.clicked.connect(self.refresh_dropdown_revision2)
         
@@ -227,14 +164,18 @@ class FolderCopyApp(QWidget):
         self.time_edit = QTimeEdit(self)
         self.time_edit.setDisplayFormat("HH:mm")
         self.checkbox_reservation = QCheckBox('예약 실행(주말 제외 해당 시각에 실행)', self)
-        self.combo_box2 = QComboBox(self)
-        #self.combo_box2.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
-        self.combo_box2.addItems(['클라복사','전체복사','서버업로드및패치','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','TEST'])
-        self.combo_box2.setFixedWidth(120)
-        self.combo_box2.currentTextChanged.connect(lambda: self.handle_combo_change(self.combo_box2.currentText()))
-        self.copy_button = QPushButton('지금 실행', self)
+        self.execute_option = QComboBox(self)
+        #self.execute_option.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
+        self.execute_option.addItems(['클라복사','전체복사','서버업로드및패치','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','TEST'])
+        self.execute_option.setFixedWidth(150)
+        self.execute_option.currentTextChanged.connect(lambda: self.handle_combo_change(self.execute_option.currentText()))
+        self.add_schedule_button = QPushButton('스케쥴 등록', self)
+        self.add_schedule_button.setStyleSheet(button_style0)
+        self.add_schedule_button.clicked.connect(self.add_new_schedule)
+        self.copy_button = QPushButton('실행', self)
+        self.copy_button.setStyleSheet(button_style0)
         self.copy_button.clicked.connect(self.execute_copy)
-        self.copy_button.setFixedWidth(125)
+        #self.copy_button.setFixedWidth(125)
         # self.copy_button = QPushButton('COPY CLIENT', self)
         # self.copy_button.setFixedWidth(120)
         # self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient'))
@@ -245,8 +186,9 @@ class FolderCopyApp(QWidget):
         # self.copy_button2.setFixedWidth(120)
         # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
         h_layout3_1.addWidget(self.new_label_4)
-        h_layout3_1.addWidget(self.combo_box2)
+        h_layout3_1.addWidget(self.execute_option)
         h_layout3_1.addStretch() 
+        h_layout3_1.addWidget(self.add_schedule_button)
         h_layout3_1.addWidget(self.copy_button)
         h_layout3_1.addWidget(self.time_edit)
         h_layout3_1.addWidget(self.checkbox_reservation)
@@ -275,26 +217,28 @@ class FolderCopyApp(QWidget):
 
         self.new_label_5 = QLabel('AWS URL', self)
         self.new_label_5.setFixedWidth(120)
-        self.input_box5 = QLineEdit(self)
-        self.input_box5.setPlaceholderText('AWS 주소')
+        self.lineedit_awsurl = QLineEdit(self)
+        self.lineedit_awsurl.setPlaceholderText('AWS 주소')
         self.new_label_6 = QLabel('Branch', self)
         self.new_label_6.setFixedWidth(120)
-        self.input_box6 = QLineEdit(self)
-        self.input_box6.setPlaceholderText('branch')
-        self.input_box6.setFixedWidth(120)
+        self.lineedit_branch = QLineEdit(self)
+        self.lineedit_branch.setPlaceholderText('branch')
+        self.lineedit_branch.setFixedWidth(120)
         # self.combo_box1 = QComboBox(self)
         # self.combo_box1.addItems(['Only Client','Only Server','All'])
         # self.combo_box1.setFixedWidth(120)
         aws_container_layout.addWidget(self.new_label_5)
-        aws_container_layout.addWidget(self.input_box5)
+        aws_container_layout.addWidget(self.lineedit_awsurl)
         aws_container_layout.addWidget(self.new_label_6)
-        aws_container_layout.addWidget(self.input_box6)
+        aws_container_layout.addWidget(self.lineedit_branch)
 
         self.aws_container.setLayout(aws_container_layout)
-        #self.detail_container.addWidget(self.textarea0)
-       # h_layout5 = QHBoxLayout(self.detail_container)
-        #detail_container_layout.addWidget(self.textarea0)
-        
+
+        # --- 스케줄 표시 영역 추가 ---
+        self.schedule_view = QTextEdit(self)
+        self.schedule_view.setReadOnly(True)
+        #self.schedule_view.setMinimumHeight(100)
+        self.refresh_schedule_view()  # 최초 로딩
 
         
 
@@ -307,13 +251,16 @@ class FolderCopyApp(QWidget):
         layout.addLayout(h_layout4)
         layout.addWidget(self.detail_container)
         layout.addWidget(self.aws_container)
+
+        layout.addWidget(self.schedule_view)
+        #layout.addStretch()
         #layout.addLayout(h_layout5)
         #layout.addStretch()
         self.setLayout(layout)
 
 
 
-        self.setWindowTitle('BUILD ttalkkag2')
+        #self.setWindowTitle('BUILD ttalkkag2')
         self.setGeometry(300, 300, 650, 100)
         self.show()
 
@@ -373,53 +320,53 @@ class FolderCopyApp(QWidget):
             return int(folder_name.split('_r')[-1])
         except ValueError:
             return 0  # In case of an invalid format, return 0 as the default
-    def refresh_dropdown_revision(self):        
-        '''
-        sort by revision
-        '''
-        print(f'refresh_dropdown_revision starttime {datetime.now()}')
+    # def refresh_dropdown_revision(self):        
+    #     '''
+    #     sort by revision
+    #     '''
+    #     print(f'refresh_dropdown_revision starttime {datetime.now()}')
         
-        self.load_stylesheet(fr"qss/red.qss")
-        time.sleep(1)
+    #     self.load_stylesheet(fr"qss/red.qss")
+    #     time.sleep(1)
 
-        self.combo_box.clear()
-        folder_path = self.buildSource_comboBox.currentText()
-        filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
+    #     self.combo_box.clear()
+    #     folder_path = self.buildSource_comboBox.currentText()
+    #     filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
-        check_file_count = False # 최신순으로 파일 개수 체크 후, 조건을 만족하는 순간 TRUE, 더 이상 체크하지 않음
+    #     check_file_count = False # 최신순으로 파일 개수 체크 후, 조건을 만족하는 순간 TRUE, 더 이상 체크하지 않음
 
-        if os.path.isdir(folder_path):
-            folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
-            folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+    #     if os.path.isdir(folder_path):
+    #         folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
+    #         folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
 
-            for folder in folders:
-                if not check_file_count :
-                    temp_file_count = self.get_file_count(os.path.join(folder_path,folder))
-                    if temp_file_count < 620:
-                        print(f'{folder}의 파일 개수 미달로 패스 : {temp_file_count}')
-                        continue
-                if len(filter_texts) != 0 :
-                    if not check_file_count :
-                        print(f'{folder}의 파일 개수 통과, 더 이상 체크 안함 : {temp_file_count}')
-                        check_file_count = True
-                    if any(filter_text in folder for filter_text in filter_texts):
-                        self.combo_box.addItem(folder)
-                else:
-                    self.combo_box.addItem(folder)
-
-
-        # Get the list of items in the dropdown
-        items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
+    #         for folder in folders:
+    #             if not check_file_count :
+    #                 temp_file_count = self.get_file_count(os.path.join(folder_path,folder))
+    #                 if temp_file_count < 620:
+    #                     print(f'{folder}의 파일 개수 미달로 패스 : {temp_file_count}')
+    #                     continue
+    #             if len(filter_texts) != 0 :
+    #                 if not check_file_count :
+    #                     print(f'{folder}의 파일 개수 통과, 더 이상 체크 안함 : {temp_file_count}')
+    #                     check_file_count = True
+    #                 if any(filter_text in folder for filter_text in filter_texts):
+    #                     self.combo_box.addItem(folder)
+    #             else:
+    #                 self.combo_box.addItem(folder)
 
 
-        # Sort the items based on the extracted revision number in descending order
-        sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
+    #     # Get the list of items in the dropdown
+    #     items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
 
-        # Clear the combo box and repopulate it with the sorted items
-        self.combo_box.clear()
-        self.combo_box.addItems(sorted_items)
-        self.load_stylesheet(fr"qss\default.qss")
-        print(f'refresh_dropdown_revision endtime {datetime.now()}')
+
+    #     # Sort the items based on the extracted revision number in descending order
+    #     sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
+
+    #     # Clear the combo box and repopulate it with the sorted items
+    #     self.combo_box.clear()
+    #     self.combo_box.addItems(sorted_items)
+    #     self.load_stylesheet(fr"qss\default.qss")
+    #     print(f'refresh_dropdown_revision endtime {datetime.now()}')
 
     def refresh_dropdown_revision2(self):        
         '''
@@ -444,7 +391,7 @@ class FolderCopyApp(QWidget):
         progress_dialog.show()
 
         try:
-            self.load_stylesheet(fr"qss/red.qss")
+            #self.load_stylesheet(fr"qss/red.qss")
             self.combo_box.clear()
             folder_path = self.buildSource_comboBox.currentText()
             filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
@@ -484,7 +431,7 @@ class FolderCopyApp(QWidget):
             # Clear the combo box and repopulate it with the sorted items
             self.combo_box.clear()
             self.combo_box.addItems(items)
-            self.load_stylesheet(fr"qss\default.qss")
+            #self.load_stylesheet(fr"qss\default.qss")
             print(f'refresh_dropdown_revision endtime {datetime.now()}')
 
         finally:
@@ -516,7 +463,7 @@ class FolderCopyApp(QWidget):
         main_path = os.path.join(dest_folder, target_folder)
         if not os.path.exists(main_path):
             os.makedirs(main_path)
-        self.generate_backend_bat_files(servers,main_path)
+        self.generate_backend_bat_files(main_path)
 
         try:
             dest_path = os.path.join(dest_folder, target_folder, target_name)
@@ -618,8 +565,8 @@ class FolderCopyApp(QWidget):
                 pass
             
             revision = self.extract_revision_number(target_folder)
-            aws_url = self.input_box5.text()
-            branch = self.input_box6.text()
+            aws_url = self.lineedit_awsurl.text()
+            branch = self.lineedit_branch.text()
             aws.aws_upload_custom2(None,revision,zip_file,aws_link=aws_url,branch=branch,buildType=buildType)
             if(update):
                 aws.aws_update_custom(None,revision,aws_url,branch=branch) # unused 250728
@@ -632,8 +579,8 @@ class FolderCopyApp(QWidget):
             target_folder = self.combo_box.currentText()
             
             revision = self.extract_revision_number(target_folder)
-            aws_url = self.input_box5.text()
-            branch = self.input_box6.text()
+            aws_url = self.lineedit_awsurl.text()
+            branch = self.lineedit_branch.text()
             aws.aws_update_sel(None,revision,aws_link=aws_url,branch=branch)
 
 
@@ -647,12 +594,12 @@ class FolderCopyApp(QWidget):
             target_folder = self.combo_box.currentText()
             buildType = self.combo_box.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
-            aws_url = self.input_box5.text()
-            branch = self.input_box6.text().strip()
+            aws_url = self.lineedit_awsurl.text()
+            branch = self.lineedit_branch.text().strip()
             if not branch:
                 branch = self.combo_box_buildname.currentText().strip()
 
-            aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False)
+            aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False,full_build_name=self.combo_box.currentText())
 
 
         except Exception as e:
@@ -665,7 +612,7 @@ class FolderCopyApp(QWidget):
             #target_folder = self.combo_box.currentText()
             # buildType = self.combo_box.currentText().split('_')[1]
             # revision = self.extract_revision_number(target_folder)
-            # aws_url = self.input_box5.text()
+            # aws_url = self.lineedit_awsurl.text()
             branch = self.combo_box_buildname.currentText()
             aws.run_teamcity(driver=None,branch=branch)
 
@@ -705,12 +652,12 @@ class FolderCopyApp(QWidget):
 
     def execute_copy(self, refresh = False):
         log_execution()
-        reservation_option = self.combo_box2.currentText() #Only Client, Only Server, All
+        reservation_option = self.execute_option.currentText() #Only Client, Only Server, All
         #QMessageBox.information(self, 'Test', 'Timer executed.')
         #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         if refresh :
-            self.refresh_dropdown_revision()
+            self.refresh_dropdown_revision2()
 
         build_fullname = self.combo_box.currentText()
         buildType = build_fullname.split('_')[1]
@@ -737,7 +684,8 @@ class FolderCopyApp(QWidget):
             self.run_teamcity()
         elif reservation_option == "TEST":
             print('TEST 실행')
-            self.show_wait_popup("서버 패치 전 대기합니다.", 1200)  # 5초 대기 
+            export_upload_result("sel-game4","CompileBuild_DEV_game_SEL274898_r311044","aws_apply","pass")
+            #self.show_wait_popup("서버 패치 전 대기합니다.", 1200)  # 5초 대기 
             print('TEST 실행 완료')
             #self.execute_test()
             #self.show_build_time_info()
@@ -757,14 +705,14 @@ class FolderCopyApp(QWidget):
                 # self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
                 # self.combo_box_buildname.addItems(settings.get('buildnames', []))
                 # self.combo_box_buildname.setCurrentIndex(0)
-                self.input_box5.setText(settings.get('input_box5', ''))
+                self.lineedit_awsurl.setText(settings.get('lineedit_awsurl', ''))
                 time_value = settings.get('time_edit', '')
             if time_value:
                 self.time_edit.setTime(QTime.fromString(time_value, 'HH:mm'))
 
-        branch_settings_file = 'branch_settings.json'
-        if os.path.exists(branch_settings_file):
-            with open(branch_settings_file, 'r') as file:
+        #branch_settings_file = 'branch_settings.json'
+        if os.path.exists(self.config_file):
+            with open(self.config_file, 'r') as file:
                 settings = json.load(file)
                 self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
                 self.combo_box_buildname.addItems(settings.get('buildnames', []))
@@ -777,7 +725,7 @@ class FolderCopyApp(QWidget):
 #            'input_box2_1': self.input_box2_1.text(),
             'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())],
             'combo_box_buildname': self.combo_box_buildname.currentText(),
-            'input_box5': self.input_box5.text(),
+            'lineedit_awsurl': self.lineedit_awsurl.text(),
             'time_edit': self.time_edit.time().toString('HH:mm'),
         }
         with open(self.settings_file, 'w') as file:
@@ -1037,7 +985,7 @@ class FolderCopyApp(QWidget):
         
         # target_folder = self.combo_box.currentText()
         # revision = self.extract_revision_number(target_folder)
-        # aws_url = self.input_box5.text()
+        # aws_url = self.lineedit_awsurl.text()
         # aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
         # aws.aws_update_custom(None,revision,aws_url)
         #self.set_loading_state(True)
@@ -1091,7 +1039,7 @@ class FolderCopyApp(QWidget):
             target_folder = self.combo_box.currentText()
             buildType = self.combo_box.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
-            aws_url = self.input_box5.text()
+            aws_url = self.lineedit_awsurl.text()
             branch = self.combo_box_buildname.currentText()
             self.setWindowTitle(f'{branch}-{buildType}_{revision}')
         except:
@@ -1105,7 +1053,7 @@ class FolderCopyApp(QWidget):
 
             
 
-    def generate_backend_bat_files(self,server_list, output_dir="."):
+    def generate_backend_bat_files(self,output_dir="."):
         """
         주어진 서버 주소 리스트를 기반으로 .bat 파일을 생성합니다.
 
@@ -1113,6 +1061,7 @@ class FolderCopyApp(QWidget):
         :param output_dir: bat 파일이 저장될 디렉토리 (기본: 현재 디렉토리)
         :param client_path: 실행할 클라이언트 경로 (기본: WindowsClient\Client.exe)
         """
+        server_list = self.get_values_from_json(self.config_file, 'awsurl')
         #base_command = f'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
         base_command = fr'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
         for server in server_list:
@@ -1226,11 +1175,9 @@ class FolderCopyApp(QWidget):
         def on_accept():
             buildname = input_box.text().strip()
             if buildname:
-                # settings.json에 저장
-                config_path = "branch_settings.json"
                 try:
-                    if os.path.exists(config_path):
-                        with open(config_path, "r", encoding="utf-8") as f:
+                    if os.path.exists(self.config_file):
+                        with open(self.config_file, "r", encoding="utf-8") as f:
                             config = json.load(f)
                     else:
                         config = {}
@@ -1238,7 +1185,7 @@ class FolderCopyApp(QWidget):
                     if buildname not in buildnames:
                         buildnames.append(buildname)
                         config[key] = buildnames
-                        with open(config_path, "w", encoding="utf-8") as f:
+                        with open(self.config_file, "w", encoding="utf-8") as f:
                             json.dump(config, f, ensure_ascii=False, indent=2)
                 except Exception as e:
                     QMessageBox.critical(self, "오류", f"branch_settings.json 저장 실패: {e}")
@@ -1264,7 +1211,7 @@ class FolderCopyApp(QWidget):
             QMessageBox.warning(self, "알림", "삭제할 빌드명이 선택되어 있지 않습니다.")
             return
 
-        config_path = "settings.json"
+        config_path = self.config_file
         try:
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -1328,6 +1275,118 @@ class FolderCopyApp(QWidget):
 
         dialog.exec_()
         timer.stop()
+
+    def open_file(self, file_path):
+        """
+        파일을 열기 위한 메소드
+        :param file_path: 열고자 하는 파일의 경로
+        """
+        try:
+            if os.path.exists(file_path):
+                os.startfile(file_path)
+            else:
+                QMessageBox.critical(self, 'Error', 'File does not exist.')
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to open file: {str(e)}')
+
+    def get_values_from_json(self, file_path, key):
+        """
+        JSON 파일에서 지정한 하나의 키에 해당하는 모든 값들을 리스트로 반환
+
+        Parameters:
+            file_path (str): JSON 파일 경로
+            key (str): 추출할 단일 키
+
+        Returns:
+            list: 해당 키의 모든 값 리스트
+        """
+        values = []
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            def extract(obj):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if k == key:
+                            # 값이 리스트면 extend, 아니면 append
+                            if isinstance(v, list):
+                                values.extend(v)
+                            else:
+                                values.append(v)
+                        extract(v)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        extract(item)
+
+            extract(data)
+            return values
+
+        except Exception as e:
+            print(f"Error: {e}")
+            return []
+        
+    def refresh_schedule_view(self):
+        """
+        schedule.json 내용을 self.schedule_view에 표시 (시간순 정렬, awsurl/branch 포함)
+        """
+        import json
+        schedule_file = "schedule.json"
+        if os.path.exists(schedule_file):
+            with open(schedule_file, "r", encoding="utf-8") as f:
+                schedules = json.load(f)
+            # 시간순 정렬
+            sorted_items = sorted(schedules.items(), key=lambda x: x[0])
+            text = ""
+            for time_str, info in sorted_items:
+                text += (f"{time_str} | {info.get('option','')} | {info.get('buildname','')}"
+                         f" | {info.get('awsurl','')} | {info.get('branch','')}\n")
+            self.schedule_view.setPlainText(text)
+        else:
+            self.schedule_view.setPlainText("등록된 스케줄이 없습니다.")
+
+
+
+    def add_new_schedule(self):
+        """
+        현재 UI의 예약 정보를 schedule.json에 추가 저장합니다.
+        key: 예약 시간 (HH:mm)
+        value: {
+            "option": 실행 옵션,
+            "buildname": 빌드명
+        }
+        """
+        import json
+
+        schedule_file = "schedule.json"
+        time_str = self.time_edit.time().toString('HH:mm')
+        option = self.execute_option.currentText()
+        buildname = self.combo_box_buildname.currentText()
+        awsurl = self.lineedit_awsurl.text().strip()
+        branch = self.lineedit_branch.text().strip()
+
+        # 기존 스케줄 불러오기
+        if os.path.exists(schedule_file):
+            with open(schedule_file, "r", encoding="utf-8") as f:
+                schedules = json.load(f)
+        else:
+            schedules = {}
+
+        # 예약 정보 추가/업데이트
+        schedules[time_str] = {
+            "option": option,
+            "buildname": buildname,
+            "awsurl": awsurl,
+            "branch": branch
+        }
+
+        # 저장
+        with open(schedule_file, "w", encoding="utf-8") as f:
+            json.dump(schedules, f, ensure_ascii=False, indent=2)
+
+        QMessageBox.information(self, "스케줄 등록", f"{time_str} 예약이 등록되었습니다.")
+        self.refresh_schedule_view()  # 등록 후 새로고침
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):

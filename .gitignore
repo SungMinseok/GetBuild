@@ -14,3 +14,5 @@ config2.json
 settings*.json
 branch_settings.json
 token.json
+getbuild*.csv
+config3.json

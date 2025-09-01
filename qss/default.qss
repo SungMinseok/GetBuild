@@ -1,7 +1,7 @@
 QWidget {
     background-color: #1a1a1a;
     color: #ffffff;
-    border-radius: 10px;
+    /* border-radius: 10px; */
     border: 1px solid #333333;
     font-family: 'Malgun Gothic', sans-serif;
     font-size: 11pt;
@@ -18,8 +18,8 @@ QLineEdit {
 
 QPushButton {
     background-color: #444444;
-    border: 1px solid #666666;
-    border-radius: 5px;
+    /* border: 1px solid #666666; */
+    /* border-radius: 5px; */
     /* padding: 5px; */
     font-family: 'Malgun Gothic', sans-serif;
 }

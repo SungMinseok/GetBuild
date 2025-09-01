@@ -1,0 +1,64 @@
+QWidget {
+    background: qlineargradient(
+        x1:0, y1:0,
+        x2:0, y2:1,
+        stop:0 #1A0E0E,
+        stop:1 #421C1C
+    );
+    color: #ffffff;
+    border: 1px solid #333333;
+    font-family: 'Malgun Gothic', sans-serif;
+    font-size: 11pt;
+    font-weight: bold;
+}
+
+QLineEdit {
+    background-color: #090909;
+    border: 1px solid #444444;
+    color: #C6C6C6;
+}
+
+QPushButton {
+    background-color: #090909;
+    border: 1px solid #444444;
+    color: #C6C6C6;
+}
+
+QPushButton:hover {
+    background-color: #2C2C2C;
+    border: 1px solid #5F5F5F;
+    color: #F3F3F3;
+}
+
+QPushButton:pressed {
+    background-color: #666666;
+}
+
+QComboBox {
+    background-color: #090909;
+    border: 1px solid #444444;
+    color: #C6C6C6;
+}
+QComboBox:hover {
+    background-color: #2C2C2C;
+    border: 1px solid #5F5F5F;
+    color: #F3F3F3;
+}
+
+QCheckBox {
+    background-color: #090909;
+    border: 1px solid #444444;
+    color: #C6C6C6;
+}
+
+QProgressDialog {
+    background-color: #090909;
+    border: 1px solid #444444;
+    color: #C6C6C6;
+}
+
+QTimeEdit {
+    background-color: #090909;
+    border: 1px solid #444444;
+    color: #C6C6C6;
+}
