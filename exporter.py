@@ -65,7 +65,9 @@ def export_upload_result(aws_link, full_build_name, option=None, result=None):
     for row in rows:
         # aws_apply 값이 없으면 빈 문자열
         aws_apply_val = row.get("aws_apply", "")
-        row["slack"] = f'{row.get("aws_link", "")}: {row.get("build_name", "")} {aws_apply_val}'
+        # aws_link에서 마지막 슬래시 뒤 부분만 추출
+        aws_link_last = row.get("aws_link", "").rstrip('/').split('/')[-1]
+        row["slack"] = f'{aws_link_last}: {row.get("build_name", "")} {aws_apply_val}'
 
     # 헤더 정의 (time이 맨 앞, slack이 맨 뒤)
     fieldnames = ["time", "aws_link", "build_name"] + option_fields + ["slack"]

@@ -137,11 +137,11 @@ class FolderCopyApp(QWidget):
         self.pushbutton_buildname_delete = QPushButton('-', self)
         self.pushbutton_buildname_delete.setFixedWidth(25)
         self.pushbutton_buildname_delete.clicked.connect(lambda: self.delete_current_combobox(self.combo_box_buildname, 'buildnames'))
-        self.combo_box = QComboBox(self)#
-        self.combo_box.currentTextChanged.connect(self.update_window_title)
+        self.combobox_buildFullName = QComboBox(self)#
+        self.combobox_buildFullName.currentTextChanged.connect(self.update_window_title)
         self.open_folder_button3 = QPushButton('📂', self)        
         self.open_folder_button3.setFixedWidth(25)
-        self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box2.text(),self.combo_box.currentText())))     
+        self.open_folder_button3.clicked.connect(lambda: self.open_folder(os.path.join(self.input_box2.text(),self.combobox_buildFullName.currentText())))     
         self.capa_button = QPushButton('ℹ️', self)
         self.capa_button.setFixedWidth(25)
         self.capa_button.clicked.connect(self.show_build_time_info)#show_last_modification_time,show_creation_time
@@ -153,7 +153,7 @@ class FolderCopyApp(QWidget):
         h_layout3.addWidget(self.combo_box_buildname)
         h_layout3.addWidget(self.pushbutton_buildname)
         h_layout3.addWidget(self.pushbutton_buildname_delete)
-        h_layout3.addWidget(self.combo_box)
+        h_layout3.addWidget(self.combobox_buildFullName)
         h_layout3.addWidget(self.open_folder_button3)
         h_layout3.addWidget(self.capa_button)
         h_layout3.addWidget(self.refresh_button)
@@ -178,13 +178,13 @@ class FolderCopyApp(QWidget):
         #self.copy_button.setFixedWidth(125)
         # self.copy_button = QPushButton('COPY CLIENT', self)
         # self.copy_button.setFixedWidth(120)
-        # self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient'))
+        # self.copy_button.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combobox_buildFullName.currentText(),'WindowsClient'))
         # self.copy_button1 = QPushButton('COPY SERVER', self)
         # self.copy_button1.setFixedWidth(120)
-        # self.copy_button1.clicked.connect(lambda : self.copy_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer'))
+        # self.copy_button1.clicked.connect(lambda : self.copy_folder(self.input_box2_1.text(),self.combobox_buildFullName.currentText(),'WindowsServer'))
         # self.copy_button2 = QPushButton('COPY ALL', self)
         # self.copy_button2.setFixedWidth(120)
-        # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),''))
+        # self.copy_button2.clicked.connect(lambda : self.copy_folder(self.input_box2.text(),self.combobox_buildFullName.currentText(),''))
         h_layout3_1.addWidget(self.new_label_4)
         h_layout3_1.addWidget(self.execute_option)
         h_layout3_1.addStretch() 
@@ -301,7 +301,7 @@ class FolderCopyApp(QWidget):
         sort by last modified time
         '''
         
-        self.combo_box.clear()
+        self.combobox_buildFullName.clear()
         folder_path = self.buildSource_comboBox.currentText()
         filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
@@ -311,15 +311,19 @@ class FolderCopyApp(QWidget):
 
             for folder in folders:
                 if any(filter_text in folder for filter_text in filter_texts):
-                    self.combo_box.addItem(folder)
+                    self.combobox_buildFullName.addItem(folder)
 
     # Function to extract the revision number (integer after '_r')
     def extract_revision_number(self,folder_name):
-        # Split the folder name by '_r' and take the last part
-        try:
-            return int(folder_name.split('_r')[-1])
-        except ValueError:
-            return 0  # In case of an invalid format, return 0 as the default
+        """
+        folder_name에서 '_r' 뒤에 오는 숫자를 추출하여 반환합니다.
+        예: CompileBuild_TEST_game_dev_SEL287878_r334412_MW -> 334412
+        """
+        import re
+        match = re.search(r'_r(\d+)', folder_name)
+        if match:
+            return int(match.group(1))
+        return 0  # 없으면 0 반환
     # def refresh_dropdown_revision(self):        
     #     '''
     #     sort by revision
@@ -329,7 +333,7 @@ class FolderCopyApp(QWidget):
     #     self.load_stylesheet(fr"qss/red.qss")
     #     time.sleep(1)
 
-    #     self.combo_box.clear()
+    #     self.combobox_buildFullName.clear()
     #     folder_path = self.buildSource_comboBox.currentText()
     #     filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
@@ -350,21 +354,21 @@ class FolderCopyApp(QWidget):
     #                     print(f'{folder}의 파일 개수 통과, 더 이상 체크 안함 : {temp_file_count}')
     #                     check_file_count = True
     #                 if any(filter_text in folder for filter_text in filter_texts):
-    #                     self.combo_box.addItem(folder)
+    #                     self.combobox_buildFullName.addItem(folder)
     #             else:
-    #                 self.combo_box.addItem(folder)
+    #                 self.combobox_buildFullName.addItem(folder)
 
 
     #     # Get the list of items in the dropdown
-    #     items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
+    #     items = [self.combobox_buildFullName.itemText(i) for i in range(self.combobox_buildFullName.count())]
 
 
     #     # Sort the items based on the extracted revision number in descending order
     #     sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
 
     #     # Clear the combo box and repopulate it with the sorted items
-    #     self.combo_box.clear()
-    #     self.combo_box.addItems(sorted_items)
+    #     self.combobox_buildFullName.clear()
+    #     self.combobox_buildFullName.addItems(sorted_items)
     #     self.load_stylesheet(fr"qss\default.qss")
     #     print(f'refresh_dropdown_revision endtime {datetime.now()}')
 
@@ -392,7 +396,7 @@ class FolderCopyApp(QWidget):
 
         try:
             #self.load_stylesheet(fr"qss/red.qss")
-            self.combo_box.clear()
+            self.combobox_buildFullName.clear()
             folder_path = self.buildSource_comboBox.currentText()
             filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
 
@@ -419,18 +423,18 @@ class FolderCopyApp(QWidget):
                 # 메인 폴더에 version.txt가 있는 경우만 추가
                 if added_count >= 1 or os.path.isfile(version_file_path):
                     if len(filter_texts) == 0 or any(filter_text in folder for filter_text in filter_texts):
-                        self.combo_box.addItem(folder)
+                        self.combobox_buildFullName.addItem(folder)
                         added_count += 1
 
             # Get the list of items in the dropdown
-            items = [self.combo_box.itemText(i) for i in range(self.combo_box.count())]
+            items = [self.combobox_buildFullName.itemText(i) for i in range(self.combobox_buildFullName.count())]
 
             # Sort the items based on the extracted revision number in descending order
             #sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
 
             # Clear the combo box and repopulate it with the sorted items
-            self.combo_box.clear()
-            self.combo_box.addItems(items)
+            self.combobox_buildFullName.clear()
+            self.combobox_buildFullName.addItems(items)
             #self.load_stylesheet(fr"qss\default.qss")
             print(f'refresh_dropdown_revision endtime {datetime.now()}')
 
@@ -441,13 +445,13 @@ class FolderCopyApp(QWidget):
     def copy_folder(self, dest_folder, target_folder, target_name):
         '''
         dest_folder:저장할 위치 'C:/mybuild'\n
-        target_folder:저장할 빌드명 'self.combo_box.currentText()'\n
+        target_folder:저장할 빌드명 'self.combobox_buildFullName.currentText()'\n
         target_name:저장할 폴더명 'WindowsClient'
         '''
         log_execution()
         src_folder = self.buildSource_comboBox.currentText()
         #dest_folder = self.input_box2.text()
-        #clinet_folder = self.combo_box.currentText()
+        #clinet_folder = self.combobox_buildFullName.currentText()
         folder_to_copy = os.path.join(src_folder, target_folder, target_name)
 
         if not os.path.isdir(src_folder):
@@ -471,7 +475,7 @@ class FolderCopyApp(QWidget):
             self.progress_dialog.setWindowModality(Qt.WindowModal)
             self.progress_dialog.setValue(0)
 
-            #dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
+            #dest_path = os.path.join(self.input_box2.text(), self.combobox_buildFullName.currentText())
 
             for root, dirs, files in os.walk(folder_to_copy):
                 for file in files:
@@ -502,9 +506,9 @@ class FolderCopyApp(QWidget):
     def zip_folder(self, dest_folder,target_folder, target_name, update:bool):
         '''
         dest_folder:저장할 위치 'C:/mybuild'\n
-        target_folder:저장할 빌드명 'self.combo_box.currentText()'\n
+        target_folder:저장할 빌드명 'self.combobox_buildFullName.currentText()'\n
         target_name:저장할 폴더명 'WindowsClient'
-            self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+            self.copy_folder(self.input_box2.text(),self.combobox_buildFullName.currentText(),'WindowsClient')
 
         update : true, upload + update실행, false upload만 실행
         '''
@@ -512,8 +516,8 @@ class FolderCopyApp(QWidget):
         log_execution()
         src_folder = self.buildSource_comboBox.currentText()
         #src_folder = 'c:/source'
-        client_folder = self.combo_box.currentText()
-        buildType = self.combo_box.currentText().split('_')[1]
+        buildFullName = self.combobox_buildFullName.currentText()
+        buildType = self.combobox_buildFullName.currentText().split('_')[1]
         folder_to_zip = os.path.join(src_folder, target_folder, target_name)
 
         if not os.path.isdir(src_folder):
@@ -567,16 +571,21 @@ class FolderCopyApp(QWidget):
             revision = self.extract_revision_number(target_folder)
             aws_url = self.lineedit_awsurl.text()
             branch = self.lineedit_branch.text()
-            aws.aws_upload_custom2(None,revision,zip_file,aws_link=aws_url,branch=branch,buildType=buildType)
+            aws.aws_upload_custom2(None,revision,zip_file,aws_link=aws_url,branch=branch,buildType=buildType,full_build_name=buildFullName)
             if(update):
                 aws.aws_update_custom(None,revision,aws_url,branch=branch) # unused 250728
         except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to zip folder: {str(e)}')
+            #msg = QMessageBox(QMessageBox.Critical, "Error", f"Failed to zip folder: {str(e)}", parent=self)
+            #msg.show()
+
+            # 10초 후에 닫히도록 설정
+            #QTimer.singleShot(10000, msg.close)
+            print(f"Failed to zip folder: {str(e)}")
 
     def aws_update_directly(self):
         log_execution()
         try:
-            target_folder = self.combo_box.currentText()
+            target_folder = self.combobox_buildFullName.currentText()
             
             revision = self.extract_revision_number(target_folder)
             aws_url = self.lineedit_awsurl.text()
@@ -590,27 +599,37 @@ class FolderCopyApp(QWidget):
 
     def aws_update_container(self):
         log_execution()
+        
+        os.startfile('kill_chrome.bat')
+        os.startfile('kill_chromedriver.bat')
+        time.sleep(5)
         try:
-            target_folder = self.combo_box.currentText()
-            buildType = self.combo_box.currentText().split('_')[1]
+            target_folder = self.combobox_buildFullName.currentText()
+            buildType = self.combobox_buildFullName.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
             aws_url = self.lineedit_awsurl.text()
             branch = self.lineedit_branch.text().strip()
             if not branch:
                 branch = self.combo_box_buildname.currentText().strip()
 
-            aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False,full_build_name=self.combo_box.currentText())
+            aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False,full_build_name=self.combobox_buildFullName.currentText())
 
 
         except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
+            #QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
+            print(f'Failed to aws_update_container: {str(e)}')
 
 
     def run_teamcity(self):
         log_execution()
+        
+        os.startfile('kill_chrome.bat')
+        os.startfile('kill_chromedriver.bat')
+        time.sleep(5)
+
         try:
-            #target_folder = self.combo_box.currentText()
-            # buildType = self.combo_box.currentText().split('_')[1]
+            #target_folder = self.combobox_buildFullName.currentText()
+            # buildType = self.combobox_buildFullName.currentText().split('_')[1]
             # revision = self.extract_revision_number(target_folder)
             # aws_url = self.lineedit_awsurl.text()
             branch = self.combo_box_buildname.currentText()
@@ -654,12 +673,12 @@ class FolderCopyApp(QWidget):
         log_execution()
         reservation_option = self.execute_option.currentText() #Only Client, Only Server, All
         #QMessageBox.information(self, 'Test', 'Timer executed.')
-        #self.zip_folder(self.input_box2_1.text(),self.combo_box.currentText(),'WindowsServer')
+        #self.zip_folder(self.input_box2_1.text(),self.combobox_buildFullName.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
         if refresh :
             self.refresh_dropdown_revision2()
 
-        build_fullname = self.combo_box.currentText()
+        build_fullname = self.combobox_buildFullName.currentText()
         buildType = build_fullname.split('_')[1]
         #print(f'대상빌드 : {self.input_box2.text()}')
         if reservation_option == "클라복사":
@@ -684,12 +703,14 @@ class FolderCopyApp(QWidget):
             self.run_teamcity()
         elif reservation_option == "TEST":
             print('TEST 실행')
-            export_upload_result("sel-game4","CompileBuild_DEV_game_SEL274898_r311044","aws_apply","pass")
+            
+            #self.generate_backend_bat_files(servers,dest_path)
+            #export_upload_result("sel-game4","CompileBuild_DEV_game_SEL274898_r311044","aws_apply","pass")
             #self.show_wait_popup("서버 패치 전 대기합니다.", 1200)  # 5초 대기 
             print('TEST 실행 완료')
-            #self.execute_test()
+            self.execute_test()
             #self.show_build_time_info()
-        #self.copy_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsClient')
+        #self.copy_folder(self.input_box2.text(),self.combobox_buildFullName.currentText(),'WindowsClient')
         if self.isReserved :
             self.isReserved = False
             self.checkbox_reservation.setChecked(True)
@@ -701,7 +722,7 @@ class FolderCopyApp(QWidget):
                 #self.input_box1.setText(settings.get('input_box1', ''))
                 self.input_box2.setText(settings.get('input_box2', ''))
                 #self.input_box2_1.setText(settings.get('input_box2_1', ''))
-                self.combo_box.addItems(settings.get('combo_box', []))
+                self.combobox_buildFullName.addItems(settings.get('combobox_buildFullName', []))
                 # self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
                 # self.combo_box_buildname.addItems(settings.get('buildnames', []))
                 # self.combo_box_buildname.setCurrentIndex(0)
@@ -713,17 +734,20 @@ class FolderCopyApp(QWidget):
         #branch_settings_file = 'branch_settings.json'
         if os.path.exists(self.config_file):
             with open(self.config_file, 'r') as file:
-                settings = json.load(file)
-                self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
-                self.combo_box_buildname.addItems(settings.get('buildnames', []))
-                self.combo_box_buildname.setCurrentIndex(0)
+                try:
+                    settings = json.load(file)
+                    self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
+                    self.combo_box_buildname.addItems(settings.get('buildnames', []))
+                    self.combo_box_buildname.setCurrentIndex(0)
+                except json.JSONDecodeError:
+                    print("Error decoding JSON from config file.")
 
     def save_settings(self):
         settings = {
             'input_box1': self.buildSource_comboBox.currentText(),
             'input_box2': self.input_box2.text(),
 #            'input_box2_1': self.input_box2_1.text(),
-            'combo_box': [self.combo_box.itemText(i) for i in range(self.combo_box.count())],
+            'combobox_buildFullName': [self.combobox_buildFullName.itemText(i) for i in range(self.combobox_buildFullName.count())],
             'combo_box_buildname': self.combo_box_buildname.currentText(),
             'lineedit_awsurl': self.lineedit_awsurl.text(),
             'time_edit': self.time_edit.time().toString('HH:mm'),
@@ -818,7 +842,7 @@ class FolderCopyApp(QWidget):
         about_dialog.exec_()
 
     def check_capacity(self):
-        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combobox_buildFullName.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -832,10 +856,10 @@ class FolderCopyApp(QWidget):
             print(total_size)
 
         total_size_mb = total_size / (1024 * 1024)  # Convert to MB
-        QMessageBox.information(self, 'Folder Capacity', f'Total size of {self.combo_box.currentText()} is {total_size_mb:.2f} MB')
+        QMessageBox.information(self, 'Folder Capacity', f'Total size of {self.combobox_buildFullName.currentText()} is {total_size_mb:.2f} MB')
 
     def show_last_modification_time(self):
-        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combobox_buildFullName.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -859,11 +883,11 @@ class FolderCopyApp(QWidget):
         time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
         
         QMessageBox.information(self, 'Last Modification Time', 
-                                f'Last modification time of {self.combo_box.currentText()} is {formatted_time}\n'
+                                f'Last modification time of {self.combobox_buildFullName.currentText()} is {formatted_time}\n'
                                 f'Time passed since last modification: {time_passed_str}')
 
     def show_creation_time(self):
-        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combobox_buildFullName.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -892,14 +916,14 @@ class FolderCopyApp(QWidget):
         time_passed_str = f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
         
         QMessageBox.information(self, 'Folder Creation Time', 
-                                f'Creation time of {self.combo_box.currentText()} is {formatted_time}\n'
+                                f'Creation time of {self.combobox_buildFullName.currentText()} is {formatted_time}\n'
                                 f'Time passed since creation: {time_passed_str}')
         
     def show_build_time_info(self):
         print(f'show_build_time_info starttime {datetime.now()}')
-        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combobox_buildFullName.currentText())
         
-        if not self.combo_box.currentText() or not os.path.isdir(folder_path):
+        if not self.combobox_buildFullName.currentText() or not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
             return
 
@@ -946,7 +970,7 @@ class FolderCopyApp(QWidget):
         print(f'show_build_time_info endtime {datetime.now()}')
         
         QMessageBox.information(self, 'Folder Creation Time', 
-                                f'{self.combo_box.currentText()}\n'
+                                f'{self.combobox_buildFullName.currentText()}\n'
                                # f'생성시간: {creation_formatted_time}\n'
                                 f'업로드 시각: {version_mod_formatted_time} ({hours}시간 {minutes}분 전)\n'
                                # f'소요시간: {last_mod_datetime-creation_datetime}\n'
@@ -955,7 +979,7 @@ class FolderCopyApp(QWidget):
         )
             
     def show_file_count(self):
-        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combobox_buildFullName.currentText())
         
         if not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
@@ -967,7 +991,7 @@ class FolderCopyApp(QWidget):
 
         # Show the file count in a pop-up
         QMessageBox.information(self, 'File Count', 
-                                f'Total number of files in {self.combo_box.currentText()} is {file_count}')
+                                f'Total number of files in {self.combobox_buildFullName.currentText()} is {file_count}')
     
     def get_file_count(self, folder_path):
         return sum([len(files) for _, _, files in os.walk(folder_path)])
@@ -981,9 +1005,9 @@ class FolderCopyApp(QWidget):
         # Replace this with whatever you want to happen when F12 is pressed
         #QMessageBox.information(self, 'Debugging', 'F12 pressed: Debugging function executed.')
 
-        #self.zip_folder(self.input_box2.text(),self.combo_box.currentText(),'WindowsServer')
+        #self.zip_folder(self.input_box2.text(),self.combobox_buildFullName.currentText(),'WindowsServer')
         
-        # target_folder = self.combo_box.currentText()
+        # target_folder = self.combobox_buildFullName.currentText()
         # revision = self.extract_revision_number(target_folder)
         # aws_url = self.lineedit_awsurl.text()
         # aws.aws_upload_custom(None,revision,zip_file,aws_link=aws_url)
@@ -1036,8 +1060,8 @@ class FolderCopyApp(QWidget):
         
     def update_window_title(self):
         try:
-            target_folder = self.combo_box.currentText()
-            buildType = self.combo_box.currentText().split('_')[1]
+            target_folder = self.combobox_buildFullName.currentText()
+            buildType = self.combobox_buildFullName.currentText().split('_')[1]
             revision = self.extract_revision_number(target_folder)
             aws_url = self.lineedit_awsurl.text()
             branch = self.combo_box_buildname.currentText()
@@ -1076,9 +1100,9 @@ class FolderCopyApp(QWidget):
 
     def show_last_file_info(self):
         print(f'show_last_file_info starttime {datetime.now()}')
-        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combo_box.currentText())
+        folder_path = os.path.join(self.buildSource_comboBox.currentText(), self.combobox_buildFullName.currentText())
         
-        if not self.combo_box.currentText() or not os.path.isdir(folder_path):
+        if not self.combobox_buildFullName.currentText() or not os.path.isdir(folder_path):
             QMessageBox.critical(self, 'Error', 'Selected path is not a valid directory.')
             return
 
@@ -1124,8 +1148,8 @@ class FolderCopyApp(QWidget):
         #     QMessageBox.critical(self, "실행 오류", f"오류:\n{e}")
 
     def execute_test(self):
-        dest_path = os.path.join(self.input_box2.text(), self.combo_box.currentText())
-        #self.generate_backend_bat_files(servers,dest_path)
+        dest_path = os.path.join(self.input_box2.text(), self.combobox_buildFullName.currentText())
+        self.generate_backend_bat_files(dest_path)
         #self.show_last_file_info()
         # Show the QMessageBox
         message_box = QMessageBox(self)

@@ -7,15 +7,15 @@
   },
   "08:40": {
     "option": "서버업로드및패치",
-    "buildname": "game_core",
-    "awsurl": "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game2",
-    "branch": "game_core"
+    "buildname": "game_SEL",
+    "awsurl": "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game",
+    "branch": "game"
   },
   "09:20": {
     "option": "서버업로드및패치",
-    "buildname": "game_progression",
-    "awsurl": "https://awsdeploy.pbb-qa.pubg.io/environment/sel-progression2",
-    "branch": "game_progression"
+    "buildname": "game_dev",
+    "awsurl": "https://awsdeploy.pbb-qa.pubg.io/environment/sel-game-dev",
+    "branch": "game_dev"
   },
   "07:20": {
     "option": "서버패치",

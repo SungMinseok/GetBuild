@@ -16,3 +16,5 @@ branch_settings.json
 token.json
 getbuild*.csv
 config3.json
+*.ps1
+*.xml
