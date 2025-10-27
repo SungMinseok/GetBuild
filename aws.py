@@ -223,7 +223,7 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
                 pass
         driver.implicitly_wait(10)
         #CONTAINER GAMESERVERS
-        driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[4]/a").click()
+        driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
         driver.implicitly_wait(5)
         time.sleep(0.5)
         #SELECT ALL
@@ -320,7 +320,7 @@ def aws_upload_custom2(driver,revision,zip_path,aws_link, branch = 'game',buildT
         driver.implicitly_wait(10)
 
         #CONTAINER GAMESERVERS
-        driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[4]/a").click()
+        driver.find_element(By.XPATH,"/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
         driver.implicitly_wait(5)
         time.sleep(0.5)
 

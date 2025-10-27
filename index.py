@@ -9,11 +9,14 @@ from PyQt5.QtGui import QPixmap, QDesktopServices, QIcon
 import zipfile
 from tqdm import tqdm
 from datetime import datetime, timedelta
-import aws
 from makelog import *
 import time
 import subprocess
 from exporter import export_upload_result
+
+# 리팩토링된 core 모듈 import
+from core import ConfigManager, ScheduleManager, BuildOperations
+from core.aws_manager import AWSManager
 
 
 class FolderCopyApp(QWidget):
@@ -21,6 +24,12 @@ class FolderCopyApp(QWidget):
         super().__init__()
         self.settings_file = 'settings.json'
         self.config_file = 'config.json'
+        
+        # 리팩토링된 모듈 초기화
+        self.config_mgr = ConfigManager(self.config_file, self.settings_file)
+        self.schedule_mgr = ScheduleManager('schedule.json')
+        self.build_ops = BuildOperations()
+        
         self.initUI()
         self.resize(950, 164)
         self.first_size = self.width(), self.height()
@@ -166,12 +175,15 @@ class FolderCopyApp(QWidget):
         self.checkbox_reservation = QCheckBox('예약 실행(주말 제외 해당 시각에 실행)', self)
         self.execute_option = QComboBox(self)
         #self.execute_option.addItems(['클라복사','전체복사','서버복사','서버업로드','서버패치','서버삭제','서버패치(구)','SEL패치(구)','TEST'])
-        self.execute_option.addItems(['클라복사','전체복사','서버업로드및패치','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','TEST'])
+        self.execute_option.addItems(['클라복사','전체복사','서버업로드및패치','서버업로드','서버패치','서버삭제','서버복사','빌드굽기','테스트(로그)','TEST'])
         self.execute_option.setFixedWidth(150)
         self.execute_option.currentTextChanged.connect(lambda: self.handle_combo_change(self.execute_option.currentText()))
         self.add_schedule_button = QPushButton('스케쥴 등록', self)
         self.add_schedule_button.setStyleSheet(button_style0)
         self.add_schedule_button.clicked.connect(self.add_new_schedule)
+        self.clear_schedule_button = QPushButton('스케쥴 전체삭제', self)
+        self.clear_schedule_button.setStyleSheet("QPushButton {background-color: #8B0000; border: 1px solid #FF0000; color: #FFFFFF;} QPushButton:hover {background-color: #A52A2A;}")
+        self.clear_schedule_button.clicked.connect(self.clear_all_schedules)
         self.copy_button = QPushButton('실행', self)
         self.copy_button.setStyleSheet(button_style0)
         self.copy_button.clicked.connect(self.execute_copy)
@@ -189,6 +201,7 @@ class FolderCopyApp(QWidget):
         h_layout3_1.addWidget(self.execute_option)
         h_layout3_1.addStretch() 
         h_layout3_1.addWidget(self.add_schedule_button)
+        h_layout3_1.addWidget(self.clear_schedule_button)
         h_layout3_1.addWidget(self.copy_button)
         h_layout3_1.addWidget(self.time_edit)
         h_layout3_1.addWidget(self.checkbox_reservation)
@@ -314,16 +327,12 @@ class FolderCopyApp(QWidget):
                     self.combobox_buildFullName.addItem(folder)
 
     # Function to extract the revision number (integer after '_r')
-    def extract_revision_number(self,folder_name):
+    def extract_revision_number(self, folder_name):
         """
         folder_name에서 '_r' 뒤에 오는 숫자를 추출하여 반환합니다.
         예: CompileBuild_TEST_game_dev_SEL287878_r334412_MW -> 334412
         """
-        import re
-        match = re.search(r'_r(\d+)', folder_name)
-        if match:
-            return int(match.group(1))
-        return 0  # 없으면 0 반환
+        return self.build_ops.extract_revision_number(folder_name)
     # def refresh_dropdown_revision(self):        
     #     '''
     #     sort by revision
@@ -374,28 +383,19 @@ class FolderCopyApp(QWidget):
 
     def refresh_dropdown_revision2(self):        
         '''
-        sort by revision with optimized logic
+        sort by revision with optimized logic (리팩토링: BuildOperations 사용)
         '''
         print(f'refresh_dropdown_revision starttime {datetime.now()}')
                 
-        # 최신화 중 메시지 박스 생성
-        # progress_message = QMessageBox(self)
-        # progress_message.setWindowTitle("진행 중")
-        # progress_message.setText("최신화 중입니다. 잠시만 기다려주세요...")
-        # progress_message.setStandardButtons(QMessageBox.NoButton)  # 버튼 제거
-        # progress_message.setWindowModality(Qt.ApplicationModal)
-        # progress_message.show()
         # 최신화 중 팝업 생성
         progress_dialog = QProgressDialog(self)
         progress_dialog.setWindowTitle("최신화 중...")
         progress_dialog.setWindowFlags(progress_dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-    
         progress_dialog.setWindowModality(Qt.WindowModal)
         progress_dialog.setCancelButton(None)
         progress_dialog.show()
 
         try:
-            #self.load_stylesheet(fr"qss/red.qss")
             self.combobox_buildFullName.clear()
             folder_path = self.buildSource_comboBox.currentText()
             filter_texts = self.combo_box_buildname.currentText().split(';') if self.combo_box_buildname.currentText() else []
@@ -404,38 +404,9 @@ class FolderCopyApp(QWidget):
                 QMessageBox.critical(self, 'Error', 'Source path is not a valid directory.')
                 return
 
-            folders = [f for f in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, f))]
-            print(f'폴더 개수 : {len(folders)}')
-            #folders.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
-                
-            # 리비전 숫자를 기준으로 내림차순 정렬
-            folders.sort(key=lambda x: self.extract_revision_number(x), reverse=True)
-
-            added_count = 0  # 추가된 폴더 개수 추적
-
-            for folder in folders:
-                if added_count >= 50:  # 최대 5개까지만 추가
-                    break
-
-                folder_full_path = os.path.join(folder_path, folder)
-                version_file_path = os.path.join(folder_full_path, "version.txt")
-
-                # 메인 폴더에 version.txt가 있는 경우만 추가
-                if added_count >= 1 or os.path.isfile(version_file_path):
-                    if len(filter_texts) == 0 or any(filter_text in folder for filter_text in filter_texts):
-                        self.combobox_buildFullName.addItem(folder)
-                        added_count += 1
-
-            # Get the list of items in the dropdown
-            items = [self.combobox_buildFullName.itemText(i) for i in range(self.combobox_buildFullName.count())]
-
-            # Sort the items based on the extracted revision number in descending order
-            #sorted_items = sorted(items, key=self.extract_revision_number, reverse=True)
-
-            # Clear the combo box and repopulate it with the sorted items
-            self.combobox_buildFullName.clear()
-            self.combobox_buildFullName.addItems(items)
-            #self.load_stylesheet(fr"qss\default.qss")
+            # BuildOperations 모듈 사용
+            builds = self.build_ops.get_latest_builds(folder_path, filter_texts, max_count=50)
+            self.combobox_buildFullName.addItems(builds)
             print(f'refresh_dropdown_revision endtime {datetime.now()}')
 
         finally:
@@ -454,14 +425,27 @@ class FolderCopyApp(QWidget):
         #clinet_folder = self.combobox_buildFullName.currentText()
         folder_to_copy = os.path.join(src_folder, target_folder, target_name)
 
+        # 디버그 로그 추가
+        print(f"[copy_folder] src_folder: {src_folder}")
+        print(f"[copy_folder] dest_folder: {dest_folder}")
+        print(f"[copy_folder] target_folder: {target_folder}")
+        print(f"[copy_folder] target_name: {target_name}")
+        print(f"[copy_folder] folder_to_copy: {folder_to_copy}")
+
         if not os.path.isdir(src_folder):
-            QMessageBox.critical(self, 'Error', 'Source path is not a valid directory.')
+            error_msg = f'Source path is not a valid directory.\n경로: {src_folder}'
+            print(f"[ERROR] {error_msg}")
+            QMessageBox.critical(self, 'Error', error_msg)
             return
         if not os.path.isdir(dest_folder):
-            QMessageBox.critical(self, 'Error', 'Destination path is not a valid directory.')
+            error_msg = f'Destination path is not a valid directory.\n경로: {dest_folder}'
+            print(f"[ERROR] {error_msg}")
+            QMessageBox.critical(self, 'Error', error_msg)
             return
         if not os.path.isdir(folder_to_copy):
-            QMessageBox.critical(self, 'Error', f'{folder_to_copy} does not exist.')
+            error_msg = f'{folder_to_copy} does not exist.'
+            print(f"[ERROR] {error_msg}")
+            QMessageBox.critical(self, 'Error', error_msg)
             return
         
         main_path = os.path.join(dest_folder, target_folder)
@@ -571,9 +555,18 @@ class FolderCopyApp(QWidget):
             revision = self.extract_revision_number(target_folder)
             aws_url = self.lineedit_awsurl.text()
             branch = self.lineedit_branch.text()
-            aws.aws_upload_custom2(None,revision,zip_file,aws_link=aws_url,branch=branch,buildType=buildType,full_build_name=buildFullName)
-            if(update):
-                aws.aws_update_custom(None,revision,aws_url,branch=branch) # unused 250728
+            # 리팩토링: AWSManager 사용
+            AWSManager.upload_server_build(
+                driver=None,
+                revision=revision,
+                zip_path=zip_file,
+                aws_link=aws_url,
+                branch=branch,
+                build_type=buildType,
+                full_build_name=buildFullName
+            )
+            # if(update): 
+            #     # unused 250728 - 더 이상 사용하지 않음
         except Exception as e:
             #msg = QMessageBox(QMessageBox.Critical, "Error", f"Failed to zip folder: {str(e)}", parent=self)
             #msg.show()
@@ -583,21 +576,21 @@ class FolderCopyApp(QWidget):
             print(f"Failed to zip folder: {str(e)}")
 
     def aws_update_directly(self):
+        """구버전 AWS 업데이트 (deprecated, 사용하지 않음)"""
         log_execution()
-        try:
-            target_folder = self.combobox_buildFullName.currentText()
-            
-            revision = self.extract_revision_number(target_folder)
-            aws_url = self.lineedit_awsurl.text()
-            branch = self.lineedit_branch.text()
-            aws.aws_update_sel(None,revision,aws_link=aws_url,branch=branch)
-
-
-        except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to aws_update_directly: {str(e)}')
+        QMessageBox.warning(self, '경고', '이 기능은 더 이상 사용되지 않습니다. "서버패치"를 사용하세요.')
+        # try:
+        #     target_folder = self.combobox_buildFullName.currentText()
+        #     revision = self.extract_revision_number(target_folder)
+        #     aws_url = self.lineedit_awsurl.text()
+        #     branch = self.lineedit_branch.text()
+        #     # aws.aws_update_sel - deprecated
+        # except Exception as e:
+        #     QMessageBox.critical(self, 'Error', f'Failed to aws_update_directly: {str(e)}')
 
 
     def aws_update_container(self):
+        """AWS 컨테이너 패치 (리팩토링: AWSManager 사용)"""
         log_execution()
         
         os.startfile('kill_chrome.bat')
@@ -612,15 +605,22 @@ class FolderCopyApp(QWidget):
             if not branch:
                 branch = self.combo_box_buildname.currentText().strip()
 
-            aws.aws_update_container(driver= None,revision=revision,aws_link=aws_url,branch=branch,buildType=buildType,isDebug=False,full_build_name=self.combobox_buildFullName.currentText())
-
+            AWSManager.update_server_container(
+                driver=None, 
+                revision=revision, 
+                aws_link=aws_url, 
+                branch=branch, 
+                build_type=buildType, 
+                is_debug=False, 
+                full_build_name=self.combobox_buildFullName.currentText()
+            )
 
         except Exception as e:
-            #QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
             print(f'Failed to aws_update_container: {str(e)}')
 
 
     def run_teamcity(self):
+        """TeamCity 빌드 실행 (리팩토링: AWSManager 사용)"""
         log_execution()
         
         os.startfile('kill_chrome.bat')
@@ -628,16 +628,11 @@ class FolderCopyApp(QWidget):
         time.sleep(5)
 
         try:
-            #target_folder = self.combobox_buildFullName.currentText()
-            # buildType = self.combobox_buildFullName.currentText().split('_')[1]
-            # revision = self.extract_revision_number(target_folder)
-            # aws_url = self.lineedit_awsurl.text()
             branch = self.combo_box_buildname.currentText()
-            aws.run_teamcity(driver=None,branch=branch)
-
+            AWSManager.run_teamcity_build(driver=None, branch=branch)
 
         except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to aws_update_container: {str(e)}')
+            QMessageBox.critical(self, 'Error', f'Failed to run_teamcity: {str(e)}')
 
     def open_folder(self, path):
         try:
@@ -646,32 +641,100 @@ class FolderCopyApp(QWidget):
             QMessageBox.critical(self, 'Error', 'Invalid directory.')
 
     def check_time(self):
+        """예약 실행 체크 - 단일 예약(체크박스) + 다중 스케줄(schedule.json) 모두 지원"""
+        now = datetime.now()
+        current_time_str = now.strftime("%H:%M")
+        
+        # 주말 체크
+        if now.weekday() >= 5:  # 5 = 토요일, 6 = 일요일
+            return
+        
+        # 이미 이번 분에 실행했으면 건너뜀 (중복 실행 방지)
+        if self.last_reserved_time:
+            if now.strftime("%Y-%m-%d %H:%M") == self.last_reserved_time.strftime("%Y-%m-%d %H:%M"):
+                return
+        
+        executed = False
+        
+        # 1. 기존 단일 예약 체크박스 처리
         if self.checkbox_reservation.isChecked():
             current_time = QTime.currentTime()
             set_time = self.time_edit.time()
 
             if current_time.hour() == set_time.hour() and current_time.minute() == set_time.minute():
-                now = datetime.now()
-
-                # ✅ 주말이면 실행 안 함
-                if now.weekday() >= 5:  # 5 = 토요일, 6 = 일요일
-                    print("주말에는 예약 실행을 건너뜁니다.")
-                    return
-
-                # ✅ 이전에 실행한 적 있으면 건너뜀
-                if self.last_reserved_time:
-                    if now.strftime("%Y-%m-%d %H:%M") == self.last_reserved_time.strftime("%Y-%m-%d %H:%M"):
-                        print(f"예약 시간 {self.last_reserved_time.strftime('%Y-%m-%d %H:%M')}에 이미 실행됨")
-                        return
-
-                self.last_reserved_time = now
+                print(f"[예약실행] 단일 예약 실행: {current_time_str} - {self.execute_option.currentText()}")
                 self.checkbox_reservation.setChecked(False)
                 self.isReserved = True
                 self.execute_copy(refresh=True)
+                executed = True
+        
+        # 2. 다중 스케줄 처리 (schedule.json)
+        due_schedules = self.schedule_mgr.get_due_schedules(current_time_str)
+        for schedule in due_schedules:
+            option = schedule.get('option', '')
+            buildname = schedule.get('buildname', '')
+            awsurl = schedule.get('awsurl', '')
+            branch = schedule.get('branch', '')
+            
+            print(f"[예약실행] 스케줄 실행: {current_time_str} - {option} | {buildname}")
+            
+            # 스케줄 정보를 UI에 임시 설정하고 실행
+            saved_option = self.execute_option.currentText()
+            saved_buildname = self.combo_box_buildname.currentText()
+            saved_awsurl = self.lineedit_awsurl.text()
+            saved_branch = self.lineedit_branch.text()
+            
+            try:
+                # 스케줄 정보로 UI 업데이트
+                if option:
+                    idx = self.execute_option.findText(option)
+                    if idx >= 0:
+                        self.execute_option.setCurrentIndex(idx)
+                
+                if buildname:
+                    idx = self.combo_box_buildname.findText(buildname)
+                    if idx >= 0:
+                        self.combo_box_buildname.setCurrentIndex(idx)
+                    self.refresh_dropdown_revision2()  # 빌드 목록 갱신
+                
+                if awsurl:
+                    self.lineedit_awsurl.setText(awsurl)
+                
+                if branch:
+                    self.lineedit_branch.setText(branch)
+                
+                # 실행
+                self.isReserved = True
+                self.execute_copy(refresh=False)  # 이미 refresh 했으므로 False
+                executed = True
+                
+            except Exception as e:
+                print(f"[예약실행 오류] {schedule}: {e}")
+            
+            finally:
+                # UI 원복
+                idx = self.execute_option.findText(saved_option)
+                if idx >= 0:
+                    self.execute_option.setCurrentIndex(idx)
+                idx = self.combo_box_buildname.findText(saved_buildname)
+                if idx >= 0:
+                    self.combo_box_buildname.setCurrentIndex(idx)
+                self.lineedit_awsurl.setText(saved_awsurl)
+                self.lineedit_branch.setText(saved_branch)
+        
+        # 실행했으면 시간 기록
+        if executed:
+            self.last_reserved_time = now
 
     def execute_copy(self, refresh = False):
         log_execution()
         reservation_option = self.execute_option.currentText() #Only Client, Only Server, All
+        
+        # 디버그 로그 추가
+        print(f"[execute_copy] 실행 시작")
+        print(f"[execute_copy] reservation_option: '{reservation_option}'")
+        print(f"[execute_copy] refresh: {refresh}")
+        
         #QMessageBox.information(self, 'Test', 'Timer executed.')
         #self.zip_folder(self.input_box2_1.text(),self.combobox_buildFullName.currentText(),'WindowsServer')
         #self.zip_folder('c:/mybuild','tempbuild','WindowsServer')
@@ -680,8 +743,13 @@ class FolderCopyApp(QWidget):
 
         build_fullname = self.combobox_buildFullName.currentText()
         buildType = build_fullname.split('_')[1]
+        print(f"[execute_copy] build_fullname: {build_fullname}")
+        print(f"[execute_copy] buildType: {buildType}")
+        print(f"[execute_copy] dest_folder (input_box2): {self.input_box2.text()}")
+        
         #print(f'대상빌드 : {self.input_box2.text()}')
         if reservation_option == "클라복사":
+            print(f"[execute_copy] '클라복사' 옵션 선택됨 - copy_folder 호출")
             self.copy_folder(self.input_box2.text(),build_fullname,'WindowsClient')
         elif reservation_option == "서버복사":
             self.copy_folder(self.input_box2.text(),build_fullname,'WindowsServer')
@@ -701,6 +769,25 @@ class FolderCopyApp(QWidget):
             self.aws_update_directly()
         elif reservation_option == "빌드굽기":
             self.run_teamcity()
+        elif reservation_option == "테스트(로그)":
+            # 테스트용 로그 출력 (실제 작업은 하지 않음)
+            test_log = f"""
+[테스트 로그 출력]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+실행 옵션: {reservation_option}
+빌드명: {self.combo_box_buildname.currentText()}
+빌드 전체명: {build_fullname}
+빌드 타입: {buildType}
+소스 경로: {self.buildSource_comboBox.currentText()}
+로컬 경로: {self.input_box2.text()}
+AWS URL: {self.lineedit_awsurl.text()}
+Branch: {self.lineedit_branch.text()}
+예약 실행: {'Yes' if self.isReserved else 'No'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+            print(test_log)
+            QMessageBox.information(self, '테스트 로그', test_log)
         elif reservation_option == "TEST":
             print('TEST 실행')
             
@@ -716,44 +803,36 @@ class FolderCopyApp(QWidget):
             self.checkbox_reservation.setChecked(True)
 
     def load_settings(self):
-        if os.path.exists(self.settings_file):
-            with open(self.settings_file, 'r') as file:
-                settings = json.load(file)
-                #self.input_box1.setText(settings.get('input_box1', ''))
-                self.input_box2.setText(settings.get('input_box2', ''))
-                #self.input_box2_1.setText(settings.get('input_box2_1', ''))
-                self.combobox_buildFullName.addItems(settings.get('combobox_buildFullName', []))
-                # self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
-                # self.combo_box_buildname.addItems(settings.get('buildnames', []))
-                # self.combo_box_buildname.setCurrentIndex(0)
-                self.lineedit_awsurl.setText(settings.get('lineedit_awsurl', ''))
-                time_value = settings.get('time_edit', '')
-            if time_value:
-                self.time_edit.setTime(QTime.fromString(time_value, 'HH:mm'))
+        """설정 로드 (리팩토링: ConfigManager 사용)"""
+        # settings.json 로드
+        settings = self.config_mgr.load_settings()
+        self.input_box2.setText(settings.get('input_box2', ''))
+        self.combobox_buildFullName.addItems(settings.get('combobox_buildFullName', []))
+        self.lineedit_awsurl.setText(settings.get('lineedit_awsurl', ''))
+        time_value = settings.get('time_edit', '')
+        if time_value:
+            self.time_edit.setTime(QTime.fromString(time_value, 'HH:mm'))
 
-        #branch_settings_file = 'branch_settings.json'
-        if os.path.exists(self.config_file):
-            with open(self.config_file, 'r') as file:
-                try:
-                    settings = json.load(file)
-                    self.combo_box_buildname.setCurrentText(settings.get('combo_box_buildname', ''))
-                    self.combo_box_buildname.addItems(settings.get('buildnames', []))
-                    self.combo_box_buildname.setCurrentIndex(0)
-                except json.JSONDecodeError:
-                    print("Error decoding JSON from config file.")
+        # config.json에서 빌드명 로드
+        try:
+            buildnames = self.config_mgr.get_buildnames()
+            if buildnames:
+                self.combo_box_buildname.addItems(buildnames)
+                self.combo_box_buildname.setCurrentIndex(0)
+        except Exception as e:
+            print(f"Config 로드 오류: {e}")
 
     def save_settings(self):
+        """설정 저장 (리팩토링: ConfigManager 사용)"""
         settings = {
             'input_box1': self.buildSource_comboBox.currentText(),
             'input_box2': self.input_box2.text(),
-#            'input_box2_1': self.input_box2_1.text(),
             'combobox_buildFullName': [self.combobox_buildFullName.itemText(i) for i in range(self.combobox_buildFullName.count())],
             'combo_box_buildname': self.combo_box_buildname.currentText(),
             'lineedit_awsurl': self.lineedit_awsurl.text(),
             'time_edit': self.time_edit.time().toString('HH:mm'),
         }
-        with open(self.settings_file, 'w') as file:
-            json.dump(settings, file)
+        self.config_mgr.save_settings(settings)
 
     def read_version_from_file(self):
         with open("version.txt", "r", encoding="utf-8") as f:
@@ -994,7 +1073,8 @@ class FolderCopyApp(QWidget):
                                 f'Total number of files in {self.combobox_buildFullName.currentText()} is {file_count}')
     
     def get_file_count(self, folder_path):
-        return sum([len(files) for _, _, files in os.walk(folder_path)])
+        """파일 개수 조회 (리팩토링: BuildOperations 사용)"""
+        return self.build_ops.get_file_count(folder_path)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_F12:
@@ -1077,26 +1157,10 @@ class FolderCopyApp(QWidget):
 
             
 
-    def generate_backend_bat_files(self,output_dir="."):
-        """
-        주어진 서버 주소 리스트를 기반으로 .bat 파일을 생성합니다.
-
-        :param server_list: 백엔드 서버 주소 리스트 (예: ['10.160.2.239:5259', 'sel-game-unrealclientproxy.pbb-qa.pubg.io:443'])
-        :param output_dir: bat 파일이 저장될 디렉토리 (기본: 현재 디렉토리)
-        :param client_path: 실행할 클라이언트 경로 (기본: WindowsClient\Client.exe)
-        """
-        server_list = self.get_values_from_json(self.config_file, 'awsurl')
-        #base_command = f'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
-        base_command = fr'start WindowsClient\Client.exe -HardwareBenchmark -gpucrashdebugging -aftermathall -norenderdoc -nosteam'
-        for server in server_list:
-            sanitized_name = server.replace(":", "_").replace(".", "_")
-            bat_filename = f"{sanitized_name}.bat"
-            full_path = os.path.join(output_dir, bat_filename)
-
-            with open(full_path, "w", encoding="utf-8") as f:
-                command = f'{base_command} -Backend="{server}" -Backend_ssl=yes -Backend_root_cert=""'
-                f.write(command)
-            #print(f"BAT 파일 생성됨: {full_path}")
+    def generate_backend_bat_files(self, output_dir="."):
+        """백엔드 BAT 파일 생성 (리팩토링: BuildOperations 사용)"""
+        server_list = self.config_mgr.get_awsurls()
+        self.build_ops.generate_backend_bat_files(output_dir, server_list)
 
     def show_last_file_info(self):
         print(f'show_last_file_info starttime {datetime.now()}')
@@ -1179,44 +1243,28 @@ class FolderCopyApp(QWidget):
         QTimer.singleShot(timeout, lambda: message_box.done(QMessageBox.Close))
 
     def show_dropdown_input_dialog(self, dropdown, title, key):
-        """
-        buildname 입력 팝업을 띄우고, 입력값을 branch_settings.json에 저장 후 드롭다운을 새로고침합니다.
-        :param dropdown: QComboBox 등 드롭다운 위젯
-        """
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QDialogButtonBox, QLabel
-        import json
+        """빌드명 추가 다이얼로그 (리팩토링: ConfigManager 사용)"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QDialogButtonBox
 
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
         layout = QVBoxLayout(dialog)
-        #label = QLabel("빌드명을 입력하세요:", dialog)
-        #layout.addWidget(label)
         input_box = QLineEdit(dialog)
         layout.addWidget(input_box)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         layout.addWidget(buttons)
 
         def on_accept():
-            buildname = input_box.text().strip()
-            if buildname:
+            name = input_box.text().strip()
+            if name:
                 try:
-                    if os.path.exists(self.config_file):
-                        with open(self.config_file, "r", encoding="utf-8") as f:
-                            config = json.load(f)
-                    else:
-                        config = {}
-                    buildnames = config.get(key, [])
-                    if buildname not in buildnames:
-                        buildnames.append(buildname)
-                        config[key] = buildnames
-                        with open(self.config_file, "w", encoding="utf-8") as f:
-                            json.dump(config, f, ensure_ascii=False, indent=2)
+                    if key == 'buildnames':
+                        names = self.config_mgr.add_buildname(name)
+                        dropdown.clear()
+                        dropdown.addItems(names)
+                        dropdown.setCurrentText(name)
                 except Exception as e:
-                    QMessageBox.critical(self, "오류", f"branch_settings.json 저장 실패: {e}")
-                # 드롭다운 새로고침
-                dropdown.clear()
-                dropdown.addItems(config.get(key, []))
-                dropdown.setCurrentText(buildname)
+                    QMessageBox.critical(self, "오류", f"설정 저장 실패: {e}")
             dialog.accept()
 
         buttons.accepted.connect(on_accept)
@@ -1224,40 +1272,21 @@ class FolderCopyApp(QWidget):
         dialog.exec_()
 
     def delete_current_combobox(self, dropdown, key):
-        """
-        현재 선택된 빌드명을 settings.json에서 삭제하고 드롭다운을 새로고침합니다.
-        :param dropdown: QComboBox 등 드롭다운 위젯
-        """
-        import json
-
-        buildname = dropdown.currentText().strip()
-        if not buildname:
+        """빌드명 삭제 (리팩토링: ConfigManager 사용)"""
+        name = dropdown.currentText().strip()
+        if not name:
             QMessageBox.warning(self, "알림", "삭제할 빌드명이 선택되어 있지 않습니다.")
             return
 
-        config_path = self.config_file
         try:
-            if os.path.exists(config_path):
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-            else:
-                config = {}
-            buildnames = config.get(key, [])
-            if buildname in buildnames:
-                buildnames.remove(buildname)
-                config[key] = buildnames
-                with open(config_path, "w", encoding="utf-8") as f:
-                    json.dump(config, f, ensure_ascii=False, indent=2)
-            else:
-                QMessageBox.information(self, "알림", "해당 빌드명이 목록에 없습니다.")
+            if key == 'buildnames':
+                names = self.config_mgr.remove_buildname(name)
+                dropdown.clear()
+                dropdown.addItems(names)
+                if names:
+                    dropdown.setCurrentIndex(0)
         except Exception as e:
-            QMessageBox.critical(self, "오류", f"settings.json 저장 실패: {e}")
-
-        # 드롭다운 새로고침
-        dropdown.clear()
-        dropdown.addItems(config.get(key, []))
-        if buildnames:
-            dropdown.setCurrentIndex(0)
+            QMessageBox.critical(self, "오류", f"설정 저장 실패: {e}")
 
     def show_wait_popup(self, message, seconds):
         """
@@ -1352,65 +1381,44 @@ class FolderCopyApp(QWidget):
             return []
         
     def refresh_schedule_view(self):
-        """
-        schedule.json 내용을 self.schedule_view에 표시 (시간순 정렬, awsurl/branch 포함)
-        """
-        import json
-        schedule_file = "schedule.json"
-        if os.path.exists(schedule_file):
-            with open(schedule_file, "r", encoding="utf-8") as f:
-                schedules = json.load(f)
-            # 시간순 정렬
-            sorted_items = sorted(schedules.items(), key=lambda x: x[0])
-            text = ""
-            for time_str, info in sorted_items:
-                text += (f"{time_str} | {info.get('option','')} | {info.get('buildname','')}"
-                         f" | {info.get('awsurl','')} | {info.get('branch','')}\n")
-            self.schedule_view.setPlainText(text)
-        else:
-            self.schedule_view.setPlainText("등록된 스케줄이 없습니다.")
+        """스케줄 뷰 갱신 (리팩토링: ScheduleManager 사용)"""
+        text = self.schedule_mgr.get_formatted_schedules()
+        self.schedule_view.setPlainText(text)
 
 
 
     def add_new_schedule(self):
-        """
-        현재 UI의 예약 정보를 schedule.json에 추가 저장합니다.
-        key: 예약 시간 (HH:mm)
-        value: {
-            "option": 실행 옵션,
-            "buildname": 빌드명
-        }
-        """
-        import json
-
-        schedule_file = "schedule.json"
+        """스케줄 추가 (리팩토링: ScheduleManager 사용)"""
         time_str = self.time_edit.time().toString('HH:mm')
         option = self.execute_option.currentText()
         buildname = self.combo_box_buildname.currentText()
         awsurl = self.lineedit_awsurl.text().strip()
         branch = self.lineedit_branch.text().strip()
 
-        # 기존 스케줄 불러오기
-        if os.path.exists(schedule_file):
-            with open(schedule_file, "r", encoding="utf-8") as f:
-                schedules = json.load(f)
-        else:
-            schedules = {}
-
-        # 예약 정보 추가/업데이트
-        schedules[time_str] = {
-            "option": option,
-            "buildname": buildname,
-            "awsurl": awsurl,
-            "branch": branch
-        }
-
-        # 저장
-        with open(schedule_file, "w", encoding="utf-8") as f:
-            json.dump(schedules, f, ensure_ascii=False, indent=2)
-
+        self.schedule_mgr.add_schedule(time_str, option, buildname, awsurl, branch)
         QMessageBox.information(self, "스케줄 등록", f"{time_str} 예약이 등록되었습니다.")
-        self.refresh_schedule_view()  # 등록 후 새로고침
+        self.refresh_schedule_view()
+    
+    def clear_all_schedules(self):
+        """모든 스케줄 삭제"""
+        schedules = self.schedule_mgr.load_schedules()
+        if not schedules:
+            QMessageBox.information(self, "스케줄 삭제", "삭제할 스케줄이 없습니다.")
+            return
+        
+        # 확인 다이얼로그
+        reply = QMessageBox.question(
+            self, 
+            "스케줄 전체 삭제", 
+            f"총 {len(schedules)}개의 스케줄을 모두 삭제하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.schedule_mgr.save_schedules([])  # 빈 리스트로 저장
+            QMessageBox.information(self, "스케줄 삭제", "모든 스케줄이 삭제되었습니다.")
+            self.refresh_schedule_view()
 
 if __name__ == '__main__':
     if os.path.exists("QuickBuild_updater.exe"):

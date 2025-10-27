@@ -1,20 +1,46 @@
+-# 설정 파일 (개인 정보 포함)
 settings.json
-128
-__pycache__
-execute*
-build
-dist
-backup
+settings*.json
+config.json
+config2.json
+config3.json
+branch_settings.json
+
+# 민감한 정보
+token.json
+schedule.json
+
+# 빌드 결과물
+build/
+dist/
 *.exe
 *.spec
 *.zip
+
+# 로그 및 캐시
+log/
+execute*
+__pycache__/
+*.pyc
+
+# 백업
+backup/
+128/
+
+# 환경 변수
 .env
-config.json
-config2.json
-settings*.json
-branch_settings.json
-token.json
+
+# 데이터 파일
 getbuild*.csv
-config3.json
+
+# 스크립트 (자동 생성)
 *.ps1
 *.xml
+
+# 임시 파일
+*.tmp
+*.bak
+*.backup
+version_info.txt
+QuickBuild_release.spec
+changelog.txt.bak

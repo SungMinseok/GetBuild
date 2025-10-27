@@ -1,0 +1,17 @@
+{
+  "version": "3.0-25.10.26.1805",
+  "build_date": "2025-10-26",
+  "update_url": "https://api.github.com/repos/SungMinseok/GetBuild/releases/latest",
+  "changelog": [
+    {
+      "version": "3.0-25.10.26.1805",
+      "date": "2025-10-26",
+      "changes": [
+        "스케줄 진행 상태 실시간 표시 기능 추가",
+        "ScheduleDialog에 소스/로컬 경로 설정 기능 추가",
+        "UI 개선 및 버그 수정"
+      ]
+    }
+  ]
+}
+
