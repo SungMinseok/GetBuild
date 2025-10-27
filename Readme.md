@@ -1,9 +1,9 @@
-# QuickBuild - PUBG Build Management Tool
+# QuickBuild - Build Management Tool
 
 [![GitHub Release](https://img.shields.io/github/v/release/SungMinseok/GetBuild)](https://github.com/SungMinseok/GetBuild/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-PyQt5 기반 PUBG 빌드 관리 및 배포 자동화 도구입니다.
+PyQt5 기반 빌드 관리 및 배포 자동화 도구입니다.
 
 ## 🌟 주요 기능
 
