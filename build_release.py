@@ -32,7 +32,7 @@ def create_version_file():
     print(f"빌드 날짜: {build_date}")
     
     # 버전 형식: 3.0-yy.mm.dd.hhmm
-    # Windows 버전 형식: 3,0,yymmdd,hhmm
+    # Windows 버전 형식: 3,0,mmdd,hhmm (각 부분은 0-65535 범위)
     if '-' in version:
         major_minor, date_time = version.split('-')
         major, minor = major_minor.split('.')
@@ -40,14 +40,17 @@ def create_version_file():
         
         if len(date_time_parts) >= 4:
             yy, mm, dd, hhmm = date_time_parts[:4]
-            yymmdd = f"{yy}{mm}{dd}"
-            file_version_parts = [major, minor, yymmdd, hhmm]
+            # mmdd 형식 사용 (예: 1027) - 65535 이하로 유지
+            mmdd = f"{mm}{dd}"
+            file_version_parts = [major, minor, mmdd, hhmm]
         else:
             file_version_parts = ['3', '0', '0', '0']
     else:
         file_version_parts = ['3', '0', '0', '0']
     
     file_version_str = ','.join(file_version_parts)
+    
+    print(f"Windows 파일 버전: {file_version_str}")
     
     version_info_content = f'''
 VSVersionInfo(
@@ -88,14 +91,14 @@ VSVersionInfo(
 
 
 def create_spec_file(version):
-    """PyInstaller spec 파일 동적 생성"""
+    """PyInstaller spec 파일 동적 생성 (onefile 모드)"""
     
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
 
 a = Analysis(
-    ['index_v2.py'],  # 메인 진입점
+    ['index_v2.py'],
     pathex=[],
     binaries=[],
     datas=[
@@ -129,6 +132,7 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# onefile 모드: 단일 실행 파일만 dist에 생성
 exe = EXE(
     pyz,
     a.scripts,
@@ -143,7 +147,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # GUI 모드
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -157,16 +161,25 @@ exe = EXE(
     with open('QuickBuild_release.spec', 'w', encoding='utf-8') as f:
         f.write(spec_content)
     
-    print("✅ QuickBuild_release.spec 생성 완료")
+    print("✅ QuickBuild_release.spec 생성 완료 (onefile 모드)")
 
 
 def run_pyinstaller():
-    """PyInstaller 실행"""
+    """PyInstaller 실행 (onefile 모드)"""
     print("\n🔨 PyInstaller 빌드 시작...")
+    print("   모드: onefile (단일 실행 파일)")
+    print("   출력: dist/QuickBuild.exe")
     
     try:
         result = subprocess.run(
-            ['pyinstaller', '--clean', '--noconfirm', 'QuickBuild_release.spec'],
+            [
+                'pyinstaller',
+                '--clean',
+                '--noconfirm',
+                '--distpath', 'dist',
+                '--workpath', 'build',
+                'QuickBuild_release.spec'
+            ],
             check=True,
             capture_output=True,
             text=True
@@ -236,18 +249,24 @@ def cleanup():
     ]
     
     dirs_to_remove = [
-        'build'
+        'build'  # PyInstaller 작업 디렉토리 (임시 파일)
     ]
     
     for file in files_to_remove:
-        if Path(file).exists():
-            Path(file).unlink()
-            print(f"  ✓ {file} 삭제")
+        try:
+            if Path(file).exists():
+                Path(file).unlink()
+                print(f"  ✓ {file} 삭제")
+        except Exception as e:
+            print(f"  ⚠ {file} 삭제 실패: {e}")
     
     for dir_name in dirs_to_remove:
-        if Path(dir_name).exists():
-            shutil.rmtree(dir_name)
-            print(f"  ✓ {dir_name}/ 폴더 삭제")
+        try:
+            if Path(dir_name).exists():
+                shutil.rmtree(dir_name)
+                print(f"  ✓ {dir_name}/ 폴더 삭제")
+        except Exception as e:
+            print(f"  ⚠ {dir_name}/ 삭제 실패: {e}")
     
     print("✅ 정리 완료")
 
@@ -255,7 +274,7 @@ def cleanup():
 def main():
     """메인 빌드 프로세스"""
     print("=" * 60)
-    print("QuickBuild 릴리즈 빌드")
+    print("QuickBuild 릴리즈 빌드 (onefile 모드)")
     print("=" * 60)
     
     # 1. 버전 정보 로드 및 파일 생성
@@ -267,11 +286,13 @@ def main():
     # 3. PyInstaller 실행
     if not run_pyinstaller():
         print("\n❌ 빌드 실패")
+        cleanup()  # 실패해도 임시 파일 정리
         sys.exit(1)
     
     # 4. ZIP 패키징
     if not create_zip_package(version):
         print("\n❌ 패키징 실패")
+        cleanup()  # 실패해도 임시 파일 정리
         sys.exit(1)
     
     # 5. 정리
@@ -280,8 +301,9 @@ def main():
     print("\n" + "=" * 60)
     print("✅ 빌드 완료!")
     print("=" * 60)
-    print(f"버전: {version}")
-    print(f"출력 파일: dist/QuickBuild_{version}.zip")
+    print(f"📦 버전: {version}")
+    print(f"📁 출력 파일: dist/QuickBuild_{version}.zip")
+    print(f"🗑️  임시 파일: 정리됨 (build/, *.spec, version_info.txt)")
     print("\n다음 단계:")
     print("  python deploy_github.py  # GitHub Release 배포")
     print("=" * 60)

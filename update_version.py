@@ -68,13 +68,8 @@ def update_version(changelog_message=None):
         with open('version.json', 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        # version.txt 저장 (기존 호환성)
-        with open('version.txt', 'w', encoding='utf-8') as f:
-            f.write(new_version)
-        
         print("\n✅ 버전 업데이트 완료!")
         print(f"   version.json: {new_version}")
-        print(f"   version.txt: {new_version}")
         print(f"   날짜: {build_date}")
         
         return new_version

@@ -42,5 +42,12 @@ getbuild*.csv
 *.bak
 *.backup
 version_info.txt
+version.txt
 QuickBuild_release.spec
 changelog.txt.bak
+
+# 업데이트 임시 파일
+QuickBuild_update.zip
+BundleEditor_update.zip
+update_extract/
+update_installer.bat

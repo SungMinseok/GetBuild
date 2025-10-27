@@ -14,6 +14,7 @@ class ScheduleItemWidget(QFrame):
     delete_requested = pyqtSignal(str)  # 삭제 요청 (schedule_id)
     toggle_requested = pyqtSignal(str)  # 활성화 토글 요청 (schedule_id)
     run_requested = pyqtSignal(str)  # 수동 실행 요청 (schedule_id)
+    stop_requested = pyqtSignal(str)  # 중지 요청 (schedule_id)
     copy_requested = pyqtSignal(str)  # 복사 요청 (schedule_id)
     
     def __init__(self, schedule: Dict[str, Any], parent=None):
@@ -271,8 +272,13 @@ class ScheduleItemWidget(QFrame):
         self.delete_requested.emit(self.schedule_id)
     
     def on_run_clicked(self):
-        """실행 버튼 클릭"""
-        self.run_requested.emit(self.schedule_id)
+        """실행/중지 버튼 클릭"""
+        if self.is_running:
+            # 실행 중이면 중지 요청
+            self.stop_requested.emit(self.schedule_id)
+        else:
+            # 실행 중이 아니면 실행 요청
+            self.run_requested.emit(self.schedule_id)
     
     def on_copy_clicked(self):
         """복사 버튼 클릭"""
@@ -294,22 +300,61 @@ class ScheduleItemWidget(QFrame):
         self.is_running = is_running
         
         if is_running:
+            # 실행 중 상태
             self.status_label.setText(f"🔄 {status_message or '실행 중...'}")
             self.status_label.setStyleSheet("color: #FF9800; font-weight: bold; font-size: 9pt;")
             self.status_label.setVisible(True)
             self.progress_bar.setRange(0, 0)  # 무한 진행 모드
             self.progress_bar.setVisible(True)
-            self.run_button.setEnabled(False)
+            
+            # 버튼을 "중지"로 변경
+            self.run_button.setText("⏹ 중지")
+            self.run_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #FF5722;
+                    color: white;
+                    border: none;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #E64A19;
+                }
+                QPushButton:pressed {
+                    background-color: #D84315;
+                }
+            """)
+            self.run_button.setEnabled(True)
+            
             self.setStyleSheet("background-color: #FFF3E0; border-left: 3px solid #FF9800;")
         else:
+            # 실행 완료 상태
             if status_message:
-                # 완료 메시지 표시 (3초 후 사라짐)
+                # 완료 메시지 표시
                 self.status_label.setText(f"✅ {status_message}")
                 self.status_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 9pt;")
             else:
                 self.status_label.setVisible(False)
             
             self.progress_bar.setVisible(False)
+            
+            # 버튼을 "실행"으로 복원
+            self.run_button.setText("▶ 실행")
+            self.run_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+                QPushButton:pressed {
+                    background-color: #3d8b40;
+                }
+            """)
             self.run_button.setEnabled(True)
             
             # 활성화 상태에 따라 스타일 복원

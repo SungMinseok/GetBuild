@@ -10,6 +10,7 @@ from PyQt5.QtGui import QIcon
 from datetime import datetime
 import subprocess
 import zipfile
+import time
 
 # Core 모듈 import
 from core import ConfigManager, ScheduleManager, BuildOperations, ScheduleWorkerThread
@@ -21,6 +22,12 @@ from ui import ScheduleDialog, ScheduleItemWidget
 # 기존 모듈 import
 from makelog import log_execution
 from exporter import export_upload_result
+
+# 업데이트 모듈 import
+try:
+    from updater import AutoUpdater
+except ImportError:
+    AutoUpdater = None
 
 
 class QuickBuildApp(QMainWindow):
@@ -47,6 +54,11 @@ class QuickBuildApp(QMainWindow):
         
         # 마지막 실행 시간 (중복 방지)
         self.last_check_time = None
+        
+        # 자동 업데이트 관리자
+        self.auto_updater = AutoUpdater() if AutoUpdater else None
+        if self.auto_updater:
+            self.auto_updater.set_main_app(self)
         
         # 실행 옵션 목록
         self.execution_options = [
@@ -299,6 +311,7 @@ class QuickBuildApp(QMainWindow):
                 item_widget.delete_requested.connect(self.delete_schedule)
                 item_widget.toggle_requested.connect(self.toggle_schedule)
                 item_widget.run_requested.connect(self.run_schedule_manually)
+                item_widget.stop_requested.connect(self.stop_schedule)
                 item_widget.copy_requested.connect(self.copy_schedule)
                 
                 # 현재 실행 중인 스케줄이면 상태 표시
@@ -450,6 +463,45 @@ class QuickBuildApp(QMainWindow):
         self.log(f"[수동 실행] {schedule.get('name', 'Unknown')}")
         self.execute_schedule(schedule)
     
+    def stop_schedule(self, schedule_id: str):
+        """스케줄 중지"""
+        if schedule_id not in self.running_workers:
+            QMessageBox.warning(self, "경고", "실행 중인 스케줄이 아닙니다.")
+            return
+        
+        worker = self.running_workers[schedule_id]
+        schedule = self.schedule_mgr.get_schedule_by_id(schedule_id)
+        schedule_name = schedule.get('name', 'Unknown') if schedule else 'Unknown'
+        
+        # 중지 확인
+        reply = QMessageBox.question(
+            self,
+            "스케줄 중지",
+            f"'{schedule_name}' 스케줄을 중지하시겠습니까?\n\n진행 중인 작업이 중단됩니다.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.log(f"[중지 요청] {schedule_name}")
+            
+            # 워커 스레드 중지 (강제 종료)
+            if worker.isRunning():
+                worker.terminate()  # 스레드 강제 종료
+                worker.wait(1000)  # 1초 대기
+            
+            # 워커 제거
+            if schedule_id in self.running_workers:
+                del self.running_workers[schedule_id]
+            
+            # UI 업데이트
+            if schedule_id in self.schedule_widgets:
+                self.schedule_widgets[schedule_id].set_running_status(False, "중지됨")
+            
+            # 상태 요약 업데이트
+            self.update_status_summary()
+            
+            self.log(f"❌ 중지됨: {schedule_name}")
+    
     def check_schedules(self):
         """스케줄 체크 (1초마다 호출)"""
         now = datetime.now()
@@ -498,7 +550,7 @@ class QuickBuildApp(QMainWindow):
         # 스레드 시작
         self.running_workers[schedule_id] = worker
         worker.start()
-        
+    
         # UI 상태 업데이트
         if schedule_id in self.schedule_widgets:
             self.schedule_widgets[schedule_id].set_running_status(True, f"{option} 실행 중...")
@@ -569,8 +621,10 @@ class QuickBuildApp(QMainWindow):
         
         dest_path = os.path.join(dest_folder, target_folder, target_name) if target_name else main_path
         
-        # 파일 복사
+        # 파일 복사 (재시도 로직 포함)
         file_count = 0
+        failed_files = []
+        
         for root, dirs, files in os.walk(folder_to_copy):
             for file in files:
                 src_file = os.path.join(root, file)
@@ -578,10 +632,51 @@ class QuickBuildApp(QMainWindow):
                 dest_dir = os.path.join(dest_path, rel_path)
                 if not os.path.exists(dest_dir):
                     os.makedirs(dest_dir)
-                shutil.copy2(src_file, dest_dir)
-                file_count += 1
+                
+                # 파일 복사 시도 (최대 5번, 재시도 간격 증가)
+                max_retries = 1
+                success = False
+                
+                for attempt in range(max_retries):
+                    try:
+                        # 목적지 파일이 이미 존재하고 읽기 전용이면 속성 제거
+                        dest_file = os.path.join(dest_dir, os.path.basename(src_file))
+                        if os.path.exists(dest_file):
+                            try:
+                                os.chmod(dest_file, 0o777)
+                            except:
+                                pass
+                        
+                        # 파일 복사
+                        shutil.copy2(src_file, dest_dir)
+                        file_count += 1
+                        success = True
+                        break
+                    except PermissionError as e:
+                        if attempt < max_retries - 1:
+                            retry_delay = (attempt + 1) * 0.5  # 0.5초, 1초, 1.5초, 2초
+                            print(f"[재시도 {attempt + 1}/{max_retries}] {file}: 파일 사용 중, {retry_delay}초 대기...")
+                            time.sleep(retry_delay)
+                        else:
+                            # 마지막 시도도 실패하면 경고만 하고 계속 진행
+                            print(f"[경고] {file}: 복사 실패 (파일 사용 중)")
+                            failed_files.append(f"{file}")
+                    except Exception as e:
+                        print(f"[오류] {file}: {type(e).__name__}: {e}")
+                        failed_files.append(f"{file}")
+                        break
         
-        return f"{file_count} files copied"
+        # 결과 메시지 생성
+        if file_count == 0:
+            raise Exception("복사된 파일이 없습니다")
+        
+        result = f"{file_count} files copied"
+        if failed_files:
+            result += f" ⚠️ {len(failed_files)} files skipped (in use)"
+            if len(failed_files) <= 5:
+                result += f": {', '.join(failed_files)}"
+        
+        return result
     
     def execute_option(self, option: str, buildname: str, awsurl: str, branch: str, 
                       src_path: str = '', dest_path: str = '') -> str:
@@ -801,25 +896,22 @@ Branch: {branch}
     
     def read_version(self) -> str:
         """
-        버전 읽기 및 포맷 변경
-        기존: 2.0.1
-        새로운: 3.0-YY.MM.DD.HHMM
+        버전 읽기 (version.json에서)
+        형식: 3.0-YY.MM.DD.HHMM
         """
         try:
-            with open("version.txt", "r", encoding="utf-8") as f:
-                version_content = f.read().strip()
-            
-            # version.txt의 내용이 새 형식인지 확인 (하이픈 포함)
-            if '-' in version_content:
-                return version_content
-            
-            # 기존 형식이면 새 형식으로 변환하여 반환 (파일은 수정 안 함)
-            # 현재 시각 기준으로 생성
-            from datetime import datetime
-            now = datetime.now()
-            major_minor = version_content.split('.')[0] if '.' in version_content else version_content
-            new_format = f"{major_minor}-{now.strftime('%y.%m.%d.%H%M')}"
-            return new_format
+            # version.json 읽기
+            import json
+            with open("version.json", "r", encoding="utf-8") as f:
+                version_data = json.load(f)
+            return version_data.get('version', '3.0-25.10.26.1805')
+        except FileNotFoundError:
+            # version.json이 없으면 version.txt 시도 (하위 호환성)
+            try:
+                with open("version.txt", "r", encoding="utf-8") as f:
+                    return f.read().strip()
+            except:
+                return "3.0-25.10.26.1805"
         except:
             return "3.0-25.10.26.1805"
     
@@ -839,21 +931,91 @@ Branch: {branch}
     
     def check_update(self):
         """업데이트 확인"""
-        if os.path.exists("QuickBuild_updater.exe"):
-            subprocess.call(["QuickBuild_updater.exe"])
-        else:
-            subprocess.call([sys.executable, "updater.py"])
+        if not self.auto_updater:
+            QMessageBox.warning(self, "업데이트 오류", "업데이트 모듈을 불러올 수 없습니다.")
+            return
+        
+        self.log("업데이트 확인 중...")
+        
+        # 동기적으로 업데이트 확인
+        has_update, info, error_msg = self.auto_updater.check_updates_sync()
+        
+        if error_msg:
+            QMessageBox.warning(self, "업데이트 확인 실패", f"오류: {error_msg}")
+            return
+        
+        if not has_update:
+            QMessageBox.information(self, "업데이트", "현재 최신 버전을 사용 중입니다.")
+            return
+        
+        # 업데이트 다이얼로그 표시
+        version = info['version']
+        release_notes = info.get('release_notes', '변경 사항 없음')
+        
+        msg = f"새로운 버전이 있습니다!\n\n"
+        msg += f"현재 버전: {self.read_version()}\n"
+        msg += f"최신 버전: {version}\n\n"
+        msg += f"변경 사항:\n{release_notes[:300]}\n\n"
+        msg += "지금 업데이트 하시겠습니까?"
+        
+        reply = QMessageBox.question(
+            self,
+            "업데이트 가능",
+            msg,
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.start_update_download()
+    
+    def start_update_download(self):
+        """업데이트 다운로드 시작"""
+        if not self.auto_updater:
+            return
+        
+        # 프로그레스 다이얼로그 생성
+        progress_dialog = QProgressDialog("업데이트 다운로드 중...", "취소", 0, 100, self)
+        progress_dialog.setWindowTitle("업데이트")
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setValue(0)
+        
+        def progress_callback(received, total):
+            if total > 0:
+                percent = int((received / total) * 100)
+                progress_dialog.setValue(percent)
+                progress_dialog.setLabelText(
+                    f"업데이트 다운로드 중...\n{received / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB"
+                )
+        
+        def completion_callback(success):
+            progress_dialog.close()
+            if not success:
+                QMessageBox.critical(self, "업데이트 실패", "업데이트 다운로드 또는 설치에 실패했습니다.")
+        
+        # 취소 버튼 연결
+        progress_dialog.canceled.connect(self.auto_updater.downloader.cancel)
+        
+        # 다운로드 및 설치 시작 (비동기)
+        self.auto_updater.download_and_install(progress_callback, completion_callback)
+        
+        progress_dialog.exec_()
 
 
 if __name__ == '__main__':
-    # 업데이터 실행 (silent)
-    if os.path.exists("QuickBuild_updater.exe"):
-        subprocess.call(["QuickBuild_updater.exe", "--silent"])
-    else:
-        subprocess.call([sys.executable, "updater.py", "--silent"])
-    
     app = QApplication(sys.argv)
     main_window = QuickBuildApp()
     main_window.show()
+    
+    # 앱 시작 시 자동 업데이트 확인 (비동기, 조용히)
+    if main_window.auto_updater:
+        def silent_update_callback(has_update, info, error_msg):
+            if has_update and info:
+                # 조용히 로그만 남김 (사용자가 메뉴에서 확인 가능)
+                main_window.log(f"새 버전 있음: {info['version']} (메뉴 > 업데이트 확인)")
+        
+        # 비동기로 확인 (UI 블록 안 함)
+        main_window.auto_updater.check_updates_async(silent_update_callback)
+    
     sys.exit(app.exec_())
 

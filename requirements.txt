@@ -3,3 +3,4 @@ tqdm==4.67.1
 PyQt5>=5.15.0
 requests>=2.31.0
 pyinstaller>=6.0.0
+packaging>=21.0
