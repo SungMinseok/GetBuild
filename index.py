@@ -11,24 +11,36 @@ from datetime import datetime
 import subprocess
 import zipfile
 import time
+import re
 
 # Core 모듈 import
 from core import ConfigManager, ScheduleManager, BuildOperations, ScheduleWorkerThread
 from core.aws_manager import AWSManager
 
 # UI 모듈 import
-from ui import ScheduleDialog, ScheduleItemWidget
+from ui import ScheduleDialog, ScheduleItemWidget, SettingsDialog
 
 # 기존 모듈 import
 from makelog import log_execution
 from exporter import export_upload_result
+from slack import send_schedule_notification
 
 # 업데이트 모듈 import
 try:
     from updater import AutoUpdater
 except ImportError:
     AutoUpdater = None
+# Qt 플랫폼 플러그인 경로 설정 (PyQt5 import 전에 설정 필요)
+if hasattr(sys, '_MEIPASS'):
+    # PyInstaller로 빌드된 실행 파일인 경우
+    qt_plugin_path = os.path.join(sys._MEIPASS, 'PyQt5', 'Qt5', 'plugins')
+else:
+    # 개발 환경인 경우
+    venv_path = os.path.join(os.path.dirname(__file__), '.venv')
+    qt_plugin_path = os.path.join(venv_path, 'Lib', 'site-packages', 'PyQt5', 'Qt5', 'plugins')
 
+os.environ['QT_PLUGIN_PATH'] = qt_plugin_path
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.join(qt_plugin_path, 'platforms')
 
 class QuickBuildApp(QMainWindow):
     """QuickBuild 메인 애플리케이션 (스케줄 중심)"""
@@ -60,6 +72,9 @@ class QuickBuildApp(QMainWindow):
         if self.auto_updater:
             self.auto_updater.set_main_app(self)
         
+        # Debug 모드 플래그
+        self.debug_mode = self.load_debug_mode()
+        
         # 실행 옵션 목록
         self.execution_options = [
             '클라복사', '전체복사', '서버업로드및패치', '서버업로드', 
@@ -76,6 +91,9 @@ class QuickBuildApp(QMainWindow):
         
         # 로그
         self.log("QuickBuild 시작")
+        
+        # ChromeDriver 최초 설치 확인 (비동기)
+        QTimer.singleShot(500, self.check_chromedriver_on_startup)
     
     def init_ui(self):
         """UI 초기화"""
@@ -138,6 +156,11 @@ class QuickBuildApp(QMainWindow):
         config_action = QAction("설정 파일 열기", self)
         config_action.triggered.connect(lambda: os.startfile(self.config_file))
         menu.addAction(config_action)
+        
+        # Settings 메뉴 추가
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(self.show_settings)
+        menu.addAction(settings_action)
         
         update_action = QAction("업데이트 확인", self)
         update_action.triggered.connect(self.check_update)
@@ -537,11 +560,29 @@ class QuickBuildApp(QMainWindow):
         src_path = schedule.get('src_path', '')
         dest_path = schedule.get('dest_path', '')
         
+        # 빌드 모드 확인: 'latest' 또는 'fixed'
+        build_mode = schedule.get('build_mode', 'latest')
+        prefix = schedule.get('prefix', '')
+        
+        # 최신 모드일 경우 prefix로 최신 빌드 찾기
+        if build_mode == 'latest' and prefix:
+            try:
+                # 경로 확인
+                settings = self.config_mgr.load_settings()
+                check_src = src_path or settings.get('input_box1', r'\\pubg-pds\PBB\Builds')
+                
+                # prefix 기준 최신 빌드 찾기
+                buildname = self.find_latest_build(check_src, prefix)
+                self.log(f"[최신 빌드 탐색] Prefix '{prefix}' → {buildname}")
+            except Exception as e:
+                self.log(f"[오류] 최신 빌드 탐색 실패: {e}")
+                return
+        
         # 실행할 함수 결정
         task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path)
         
-        # 워커 스레드 생성
-        worker = ScheduleWorkerThread(schedule, task_func)
+        # 워커 스레드 생성 (Debug 모드이면 stdout 캡처)
+        worker = ScheduleWorkerThread(schedule, task_func, capture_stdout=self.debug_mode)
         
         # 시그널 연결
         worker.log.connect(self.log)
@@ -557,6 +598,10 @@ class QuickBuildApp(QMainWindow):
         
         # 상태 요약 업데이트
         self.update_status_summary()
+        
+        # 슬랙 알림 전송 (시작)
+        self.send_slack_notification_if_enabled(schedule, '시작', 
+                                               f"옵션: {option}\n빌드: {buildname}")
     
     def find_latest_build(self, src_folder: str, buildname: str) -> str:
         """
@@ -585,10 +630,23 @@ class QuickBuildApp(QMainWindow):
         if not matching_folders:
             raise Exception(f'No build folders found matching: {buildname}')
         
-        # 최신 폴더 찾기 (수정 시간 기준)
-        matching_folders.sort(key=lambda x: os.path.getmtime(os.path.join(src_folder, x)), reverse=True)
+        # 최신 폴더 찾기 (리비전 r 값 기준)
+        def extract_revision_from_name(name: str) -> int:
+            m = re.search(r'(?:^|_)r(\d+)(?:$|_)', name)
+            if m:
+                return int(m.group(1))
+            m2 = re.search(r'r(\d+)', name)
+            return int(m2.group(1)) if m2 else -1
+
+        matching_folders.sort(
+            key=lambda x: (
+                extract_revision_from_name(x),
+                os.path.getmtime(os.path.join(src_folder, x))
+            ),
+            reverse=True
+        )
         latest_folder = matching_folders[0]
-        
+
         print(f"[find_latest_build] Found {len(matching_folders)} matching folders, latest: {latest_folder}")
         return latest_folder
     
@@ -625,15 +683,27 @@ class QuickBuildApp(QMainWindow):
         file_count = 0
         failed_files = []
         
+        dir_count = 0
         for root, dirs, files in os.walk(folder_to_copy):
+            # 디렉터리(빈 폴더 포함) 생성
+            rel_path = os.path.relpath(root, folder_to_copy)
+            current_dest_dir = os.path.join(dest_path, rel_path) if rel_path != '.' else dest_path
+            if not os.path.exists(current_dest_dir):
+                os.makedirs(current_dest_dir)
+                dir_count += 1
+
+            for d in dirs:
+                sub_dir = os.path.join(current_dest_dir, d)
+                if not os.path.exists(sub_dir):
+                    os.makedirs(sub_dir)
+                    dir_count += 1
+
+            # 파일 복사
             for file in files:
                 src_file = os.path.join(root, file)
-                rel_path = os.path.relpath(root, folder_to_copy)
-                dest_dir = os.path.join(dest_path, rel_path)
-                if not os.path.exists(dest_dir):
-                    os.makedirs(dest_dir)
+                dest_dir = current_dest_dir
                 
-                # 파일 복사 시도 (최대 5번, 재시도 간격 증가)
+                # 파일 복사 시도 (최대 1번: 파일 사용중 등은 스킵)
                 max_retries = 1
                 success = False
                 
@@ -654,11 +724,10 @@ class QuickBuildApp(QMainWindow):
                         break
                     except PermissionError as e:
                         if attempt < max_retries - 1:
-                            retry_delay = (attempt + 1) * 0.5  # 0.5초, 1초, 1.5초, 2초
+                            retry_delay = (attempt + 1) * 0.5
                             print(f"[재시도 {attempt + 1}/{max_retries}] {file}: 파일 사용 중, {retry_delay}초 대기...")
                             time.sleep(retry_delay)
                         else:
-                            # 마지막 시도도 실패하면 경고만 하고 계속 진행
                             print(f"[경고] {file}: 복사 실패 (파일 사용 중)")
                             failed_files.append(f"{file}")
                     except Exception as e:
@@ -667,10 +736,7 @@ class QuickBuildApp(QMainWindow):
                         break
         
         # 결과 메시지 생성
-        if file_count == 0:
-            raise Exception("복사된 파일이 없습니다")
-        
-        result = f"{file_count} files copied"
+        result = f"{file_count} files copied, {dir_count} dirs created"
         if failed_files:
             result += f" ⚠️ {len(failed_files)} files skipped (in use)"
             if len(failed_files) <= 5:
@@ -683,6 +749,11 @@ class QuickBuildApp(QMainWindow):
         """
         실행 옵션 처리 (실제 작업)
         이 함수는 QThread 내에서 실행됩니다.
+        
+        Args:
+            buildname: 빌드명 (Prefix 또는 전체 빌드명)
+                - 짧은 이름(예: game_SEL): find_latest_build로 최신 빌드 찾음
+                - 전체 빌드명(예: CompileBuild_DEV_game_SEL_...): 그대로 사용
         """
         log_execution()  # 실행 로그
         
@@ -698,6 +769,24 @@ class QuickBuildApp(QMainWindow):
             
             print(f"[execute_option] option: {option}, buildname: {buildname}")
             print(f"[execute_option] src_folder: {src_folder}, dest_folder: {dest_folder}")
+            
+            # buildname이 실제 폴더인지 확인 (전체 빌드명인지 Prefix인지 판단)
+            def is_full_buildname(name: str) -> bool:
+                """전체 빌드명인지 확인 (실제 폴더 존재 여부로 판단)"""
+                if not name:
+                    return False
+                full_path = os.path.join(src_folder, name)
+                return os.path.isdir(full_path)
+            
+            # 전체 빌드명 결정
+            def get_full_buildname(name: str) -> str:
+                """buildname이 Prefix면 최신 빌드 찾기, 전체 빌드명이면 그대로 사용"""
+                if is_full_buildname(name):
+                    print(f"[get_full_buildname] 전체 빌드명 사용: {name}")
+                    return name
+                else:
+                    print(f"[get_full_buildname] Prefix로 최신 빌드 탐색: {name}")
+                    return self.find_latest_build(src_folder, name)
             
             if option == "테스트(로그)":
                 # 테스트 로그만 출력
@@ -715,8 +804,7 @@ Branch: {branch}
                 return "테스트 로그 출력 완료"
             
             elif option == "클라복사":
-                # buildname이 짧은 이름이면 전체 빌드명 찾기
-                full_buildname = self.find_latest_build(src_folder, buildname)
+                full_buildname = get_full_buildname(buildname)
                 print(f"[execute_option] 클라복사 - full_buildname: {full_buildname}")
                 
                 # 실제 클라이언트 복사 로직
@@ -724,8 +812,7 @@ Branch: {branch}
                 return f"클라복사 완료: {full_buildname} ({result})"
             
             elif option == "서버복사":
-                # buildname이 짧은 이름이면 전체 빌드명 찾기
-                full_buildname = self.find_latest_build(src_folder, buildname)
+                full_buildname = get_full_buildname(buildname)
                 print(f"[execute_option] 서버복사 - full_buildname: {full_buildname}")
                 
                 # 실제 서버 복사 로직
@@ -733,8 +820,7 @@ Branch: {branch}
                 return f"서버복사 완료: {full_buildname} ({result})"
             
             elif option == "전체복사":
-                # buildname이 짧은 이름이면 전체 빌드명 찾기
-                full_buildname = self.find_latest_build(src_folder, buildname)
+                full_buildname = get_full_buildname(buildname)
                 print(f"[execute_option] 전체복사 - full_buildname: {full_buildname}")
                 
                 # 실제 전체 복사 로직
@@ -746,16 +832,31 @@ Branch: {branch}
                 if not awsurl:
                     raise Exception("AWS URL이 설정되지 않았습니다.")
                 
-                # Chrome 프로세스 종료
-                os.system('taskkill /F /IM chrome.exe /T 2>nul')
-                os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
-                import time
-                time.sleep(2)
+                # buildname이 이미 full_buildname이면 그대로 사용 (폴더 검색 없이)
+                # 그렇지 않으면 get_full_buildname으로 폴더 검색
+                if buildname and ('CompileBuild' in buildname or 'Compilebuild' in buildname):
+                    # 이미 전체 빌드 이름임 (예: CompileBuild_DEV_game_SEL_25000_r300001)
+                    full_buildname = buildname
+                    print(f"[서버패치] 지정된 full_buildname 사용: {full_buildname}")
+                else:
+                    # 폴더에서 검색
+                    full_buildname = get_full_buildname(buildname)
+                    print(f"[서버패치] 검색된 full_buildname: {full_buildname}")
                 
-                # 리비전 번호 추출 필요 (buildname에서)
-                revision = self.build_ops.extract_revision_number(buildname)
-                buildType = buildname.split('_')[1] if '_' in buildname else 'DEV'
+                # 리비전/타입 추출
+                revision = self.build_ops.extract_revision_number(full_buildname)
+                buildType = full_buildname.split('_')[1] if '_' in full_buildname else 'DEV'
                 
+                print(f"[서버패치] revision: {revision}, buildType: {buildType}, branch: {branch}")
+                print(f"[서버패치] AWS URL: {awsurl}")
+                
+                # Chrome 프로세스 종료 후 재시작 (디버깅 포트 재활용 안정화)
+                # print("[서버패치] Chrome 프로세스 종료 중...")
+                # os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                # os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
+                # time.sleep(3)
+                
+                print("[서버패치] AWS Manager 실행 중...")
                 AWSManager.update_server_container(
                     driver=None,
                     revision=revision,
@@ -763,18 +864,87 @@ Branch: {branch}
                     branch=branch,
                     build_type=buildType,
                     is_debug=False,
-                    full_build_name=buildname
+                    full_build_name=full_buildname
                 )
-                return f"서버패치 완료: {awsurl}"
+                print("[서버패치] AWS Manager 완료")
+                return f"서버패치 완료: {awsurl} ({full_buildname})"
             
             elif option == "서버업로드":
-                # TODO: 서버 업로드 로직
-                # self.zip_folder(...) + AWSManager.upload_server_build(...)
-                return f"서버업로드 완료: {buildname}"
+                # if not awsurl:
+                #     raise Exception("AWS URL이 설정되지 않았습니다.")
+                
+                # Chrome 프로세스 종료 후 재시작 (디버깅 포트 재활용 안정화)
+                # print("[서버패치] Chrome 프로세스 종료 중...")
+                # os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                # os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
+                # time.sleep(3)
+                
+                
+                full_buildname = get_full_buildname(buildname)
+                
+                # 빌드 경로 확인 (NAS 경로)
+                build_path = os.path.join(src_folder, full_buildname)
+                if not os.path.isdir(build_path):
+                    raise Exception(f"빌드 폴더가 없습니다: {build_path}")
+                
+                # 리비전/타입 추출
+                revision = self.build_ops.extract_revision_number(full_buildname)
+                buildType = full_buildname.split('_')[1] if '_' in full_buildname else 'DEV'
+                
+                # TeamCity를 통한 서버 배포 실행
+                AWSManager.upload_server_build(
+                    driver=None,
+                    revision=revision,
+                    zip_path="",  # TeamCity 방식에서는 사용하지 않음
+                    aws_link=awsurl,
+                    branch=branch,
+                    build_type=buildType,
+                    full_build_name=full_buildname
+                )
+                return f"서버업로드 완료: {full_buildname}"
             
             elif option == "서버업로드및패치":
-                # TODO: 서버 업로드 + 패치
-                return f"서버업로드및패치 완료: {buildname}"
+                if not awsurl:
+                    raise Exception("AWS URL이 설정되지 않았습니다.")
+                
+                full_buildname = get_full_buildname(buildname)
+                
+                # 빌드 경로 확인 (NAS 경로)
+                build_path = os.path.join(src_folder, full_buildname)
+                if not os.path.isdir(build_path):
+                    raise Exception(f"빌드 폴더가 없습니다: {build_path}")
+                
+                # 리비전/타입 추출
+                revision = self.build_ops.extract_revision_number(full_buildname)
+                buildType = full_buildname.split('_')[1] if '_' in full_buildname else 'DEV'
+                
+                # Chrome 프로세스 초기화
+                os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
+                time.sleep(2)
+                
+                # TeamCity를 통한 서버 배포 실행
+                AWSManager.upload_server_build(
+                    driver=None,
+                    revision=revision,
+                    zip_path="",  # TeamCity 방식에서는 사용하지 않음
+                    aws_link=awsurl,
+                    branch=branch,
+                    build_type=buildType,
+                    full_build_name=full_buildname
+                )
+                
+                # 패치
+                AWSManager.update_server_container(
+                    driver=None,
+                    revision=revision,
+                    aws_link=awsurl,
+                    branch=branch,
+                    build_type=buildType,
+                    is_debug=False,
+                    full_build_name=full_buildname
+                )
+                return f"서버업로드및패치 완료: {awsurl} ({full_buildname})"
             
             elif option == "빌드굽기":
                 # TeamCity 빌드 실행
@@ -815,6 +985,10 @@ Branch: {branch}
         
         # 상태 요약 업데이트
         self.update_status_summary()
+        
+        # 슬랙 알림 전송 (완료/실패)
+        status = '완료' if success else '실패'
+        self.send_slack_notification_if_enabled(schedule, status, message)
     
     def hide_status_message(self, schedule_id: str):
         """상태 메시지 숨기기"""
@@ -822,6 +996,51 @@ Branch: {branch}
             widget = self.schedule_widgets[schedule_id]
             if not widget.is_running:  # 실행 중이 아닐 때만 숨김
                 widget.status_label.setVisible(False)
+    
+    def send_slack_notification_if_enabled(self, schedule: dict, status: str, details: str = None):
+        """
+        스케줄에 슬랙 알림이 활성화되어 있으면 알림 전송
+        
+        Args:
+            schedule: 스케줄 정보
+            status: 상태 (시작, 완료, 실패)
+            details: 추가 상세 정보
+        """
+        try:
+            # 슬랙 알림이 활성화되어 있는지 확인
+            slack_enabled = schedule.get('slack_enabled', False)
+            slack_webhook = schedule.get('slack_webhook', '').strip()
+            
+            if not slack_enabled or not slack_webhook:
+                return
+            
+            # 스케줄 이름
+            schedule_name = schedule.get('name', 'Unknown')
+            
+            # 알림 타입 및 추가 정보
+            notification_type = schedule.get('notification_type', 'standalone')
+            bot_token = schedule.get('bot_token', '').strip()
+            channel_id = schedule.get('channel_id', '').strip()
+            thread_keyword = schedule.get('thread_keyword', '').strip()
+            
+            # 알림 전송
+            if notification_type == 'thread' and bot_token and channel_id and thread_keyword:
+                self.log(f"[슬랙 알림] 스레드 댓글 모드: '{thread_keyword}' 검색 중...")
+            
+            send_schedule_notification(
+                webhook_url=slack_webhook,
+                schedule_name=schedule_name,
+                status=status,
+                details=details,
+                notification_type=notification_type,
+                bot_token=bot_token if notification_type == 'thread' else None,
+                channel_id=channel_id if notification_type == 'thread' else None,
+                thread_keyword=thread_keyword if notification_type == 'thread' else None
+            )
+            
+        except Exception as e:
+            # 슬랙 알림 실패는 로그만 남기고 계속 진행
+            self.log(f"[슬랙 알림 오류] {e}")
     
     def update_status_summary(self):
         """상태 요약 업데이트"""
@@ -869,7 +1088,7 @@ Branch: {branch}
         
         # 화면 출력
         self.log_text.append(log_line)
-        print(log_line)
+        # print는 제거: UI에 이미 출력되고, Debug 모드에서 무한 재귀 발생
         
         # 파일 저장 (날짜별)
         try:
@@ -1000,6 +1219,127 @@ Branch: {branch}
         self.auto_updater.download_and_install(progress_callback, completion_callback)
         
         progress_dialog.exec_()
+    
+    def show_settings(self):
+        """설정 다이얼로그 표시"""
+        dialog = SettingsDialog(self, self.settings_file)
+        if dialog.exec_():
+            # 설정 저장됨
+            self.debug_mode = dialog.get_debug_mode()
+            self.log(f"설정 저장됨 - Debug 모드: {'ON' if self.debug_mode else 'OFF'}")
+    
+    def load_debug_mode(self):
+        """settings.json에서 debug_mode 로드"""
+        try:
+            import json
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    return settings.get('debug_mode', False)
+        except Exception as e:
+            print(f"Debug 모드 로드 오류: {e}")
+        return False
+    
+    def check_chromedriver_on_startup(self):
+        """앱 시작 시 ChromeDriver 존재 여부 확인 및 자동 설치"""
+        try:
+            self.log("=== ChromeDriver 확인 중 ===")
+            
+            # ChromeDriver 경로 확인 시도
+            try:
+                chromedriver_path = AWSManager.get_chromedriver_path()
+                self.log(f"✅ ChromeDriver 발견: {chromedriver_path}")
+                return
+            except FileNotFoundError as e:
+                # ChromeDriver가 없음
+                self.log("⚠️ ChromeDriver가 설치되어 있지 않습니다.")
+                self.log(str(e))
+                
+                # 사용자에게 자동 설치 여부 확인
+                reply = QMessageBox.question(
+                    self,
+                    "ChromeDriver 설치 필요",
+                    "ChromeDriver가 설치되어 있지 않습니다.\n\n"
+                    "서버 업로드/패치 기능을 사용하려면 ChromeDriver가 필요합니다.\n"
+                    "지금 자동으로 설치하시겠습니까?\n\n"
+                    "• chromedriver_autoinstaller 사용\n"
+                    "• 시스템 Chrome 버전과 호환되는 버전 자동 선택\n"
+                    "• 소요 시간: 약 30초~1분",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.No:
+                    self.log("ChromeDriver 설치를 건너뛰었습니다.")
+                    self.log("나중에 Settings 메뉴에서 설치할 수 있습니다.")
+                    return
+                
+                # 자동 설치 시작
+                self.log("=== ChromeDriver 자동 설치 시작 ===")
+                self.install_chromedriver_on_startup()
+                
+        except Exception as e:
+            self.log(f"ChromeDriver 확인 중 오류: {e}")
+    
+    def install_chromedriver_on_startup(self):
+        """앱 시작 시 ChromeDriver 자동 설치"""
+        from PyQt5.QtCore import QThread, pyqtSignal
+        
+        class ChromeDriverInstallThread(QThread):
+            """ChromeDriver 설치 스레드"""
+            progress = pyqtSignal(str)
+            finished = pyqtSignal(bool, str)
+            
+            def run(self):
+                try:
+                    def progress_callback(msg):
+                        self.progress.emit(msg)
+                    
+                    driver_path = AWSManager.download_latest_chromedriver(progress_callback)
+                    self.finished.emit(True, driver_path)
+                except Exception as e:
+                    self.finished.emit(False, str(e))
+        
+        # 진행 다이얼로그
+        progress_dialog = QProgressDialog("ChromeDriver 설치 준비 중...", None, 0, 0, self)
+        progress_dialog.setWindowTitle("ChromeDriver 설치")
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setCancelButton(None)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.show()
+        
+        # 설치 스레드 시작
+        install_thread = ChromeDriverInstallThread()
+        
+        def on_progress(msg):
+            progress_dialog.setLabelText(msg)
+            self.log(msg)
+        
+        def on_finished(success, message):
+            progress_dialog.close()
+            
+            if success:
+                self.log(f"✅ ChromeDriver 설치 완료: {message}")
+                QMessageBox.information(
+                    self,
+                    "설치 완료",
+                    f"ChromeDriver가 성공적으로 설치되었습니다!\n\n경로: {message}"
+                )
+            else:
+                self.log(f"❌ ChromeDriver 설치 실패: {message}")
+                QMessageBox.critical(
+                    self,
+                    "설치 실패",
+                    f"ChromeDriver 설치에 실패했습니다.\n\n{message}\n\n"
+                    "Settings 메뉴에서 다시 시도하거나 수동으로 설치해주세요."
+                )
+        
+        install_thread.progress.connect(on_progress)
+        install_thread.finished.connect(on_finished)
+        install_thread.start()
+        
+        # 스레드 참조 유지
+        self.chromedriver_install_thread = install_thread
 
 
 if __name__ == '__main__':

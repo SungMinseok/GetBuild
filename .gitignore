@@ -9,6 +9,7 @@ branch_settings.json
 # 민감한 정보
 token.json
 schedule.json
+hook.json
 
 # 빌드 결과물
 build/
@@ -26,6 +27,9 @@ __pycache__/
 # 백업
 backup/
 128/
+
+# ChromeDriver (자동 다운로드)
+driver/
 
 # 환경 변수
 .env
@@ -45,6 +49,7 @@ version_info.txt
 version.txt
 QuickBuild_release.spec
 changelog.txt.bak
+build_pyinstaller.log
 
 # 업데이트 임시 파일
 QuickBuild_update.zip
@@ -52,4 +57,9 @@ BundleEditor_update.zip
 update_extract/
 update_installer.bat
 hook.json
+
+.venv/
+
+142
+141
 all_commits_with_diff.txt

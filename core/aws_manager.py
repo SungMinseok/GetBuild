@@ -1,134 +1,449 @@
 """AWS 배포 관련 작업 모듈 (기존 aws.py 정리 버전)"""
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
-import chromedriver_autoinstaller
 import subprocess
 import time
 import requests
 import re
+import os
+import sys
+import zipfile
+import shutil
+import psutil
 from exporter import export_upload_result
 
 
 class AWSManager:
     """AWS 배포 관련 작업 관리"""
     
+    # ChromeDriver 관련 상수
+    CHROME_USER_DATA_DIR = r'C:\ChromeTEMP'
+    CHROME_DEBUGGING_PORT = 9222
+    
+    @staticmethod
+    def get_base_path():
+        """실행 파일 기준 경로 반환"""
+        if getattr(sys, 'frozen', False):
+            # 실행 파일로 실행 중
+            return os.path.dirname(sys.executable)
+        else:
+            # 스크립트로 실행 중
+            return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    @staticmethod
+    def get_driver_dir():
+        """driver 폴더 경로 반환 (없으면 생성)"""
+        base_path = AWSManager.get_base_path()
+        driver_dir = os.path.join(base_path, 'driver')
+        if not os.path.exists(driver_dir):
+            os.makedirs(driver_dir)
+            print(f"[get_driver_dir] driver 폴더 생성: {driver_dir}")
+        return driver_dir
+    
+    @staticmethod
+    def download_latest_chromedriver(progress_callback=None):
+        """최신 ChromeDriver 다운로드 및 설치 (chromedriver_autoinstaller 사용)
+        
+        Args:
+            progress_callback: 진행 상황 콜백 함수 (message: str) -> None
+        
+        Returns:
+            str: 설치된 ChromeDriver 경로
+        """
+        def log(msg):
+            print(msg)
+            if progress_callback:
+                progress_callback(msg)
+        
+        try:
+            log("[ChromeDriver 다운로드] 시작...")
+            log("[1/3] chromedriver_autoinstaller 사용하여 자동 설치 중...")
+            
+            import chromedriver_autoinstaller
+            
+            # driver 폴더를 chromedriver 설치 경로로 지정
+            driver_dir = AWSManager.get_driver_dir()
+            
+            # 기존 chromedriver_autoinstaller는 자체 경로에 설치하므로
+            # 일단 자동 설치하고 나중에 복사
+            log("[2/3] ChromeDriver 다운로드 및 설치 중...")
+            installed_path = chromedriver_autoinstaller.install(cwd=True)
+            
+            if not installed_path or not os.path.exists(installed_path):
+                raise Exception("ChromeDriver 자동 설치 실패")
+            
+            log(f"[2/3] ChromeDriver 설치됨: {installed_path}")
+            
+            # 버전 정보 추출 (경로에서)
+            # 예: C:\Users\...\131.0.6778.86\chromedriver.exe
+            installed_dir = os.path.dirname(installed_path)
+            version = os.path.basename(installed_dir)
+            
+            # driver 폴더로 복사
+            target_dir = os.path.join(driver_dir, version)
+            
+            if os.path.exists(target_dir):
+                log(f"[3/3] 기존 버전 제거: {target_dir}")
+                shutil.rmtree(target_dir)
+            
+            log(f"[3/3] driver 폴더로 복사: {target_dir}")
+            shutil.copytree(installed_dir, target_dir)
+            
+            final_driver_path = os.path.join(target_dir, 'chromedriver.exe')
+            
+            log(f"✅ ChromeDriver 설치 완료!")
+            log(f"   버전: {version}")
+            log(f"   경로: {final_driver_path}")
+            
+            return final_driver_path
+            
+        except Exception as e:
+            error_msg = f"❌ ChromeDriver 다운로드 실패: {e}"
+            log(error_msg)
+            raise Exception(error_msg)
+    
+    @staticmethod
+    def kill_all_chromedrivers():
+        """모든 ChromeDriver 프로세스 강제 종료
+        
+        Returns:
+            int: 종료된 프로세스 수
+        """
+        killed_count = 0
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                if proc.info['name'] and 'chromedriver' in proc.info['name'].lower():
+                    try:
+                        proc.kill()
+                        killed_count += 1
+                        print(f"[kill_chromedrivers] 종료: PID {proc.info['pid']}")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        print(f"[kill_chromedrivers] 종료 실패: {e}")
+            
+            if killed_count > 0:
+                print(f"[kill_chromedrivers] 총 {killed_count}개의 ChromeDriver 프로세스 종료")
+            else:
+                print("[kill_chromedrivers] 실행 중인 ChromeDriver 없음")
+                
+        except Exception as e:
+            print(f"[kill_chromedrivers] 오류: {e}")
+        
+        return killed_count
+    
+    @staticmethod
+    def clear_chrome_cache():
+        """Chrome 사용자 데이터 디렉터리 삭제
+        
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            cache_dir = AWSManager.CHROME_USER_DATA_DIR
+            
+            if not os.path.exists(cache_dir):
+                print(f"[clear_cache] 캐시 디렉터리 없음: {cache_dir}")
+                return True
+            
+            # Chrome 프로세스 종료 확인
+            chrome_running = False
+            for proc in psutil.process_iter(['pid', 'name']):
+                if proc.info['name'] and 'chrome' in proc.info['name'].lower():
+                    chrome_running = True
+                    print(f"[clear_cache] 경고: Chrome 실행 중 (PID: {proc.info['pid']})")
+            
+            if chrome_running:
+                raise Exception("Chrome이 실행 중입니다. 먼저 Chrome을 종료해주세요.")
+            
+            # 캐시 디렉터리 삭제
+            print(f"[clear_cache] 캐시 삭제 중: {cache_dir}")
+            shutil.rmtree(cache_dir)
+            print("[clear_cache] ✅ 캐시 삭제 완료")
+            
+            return True
+            
+        except Exception as e:
+            error_msg = f"[clear_cache] ❌ 캐시 삭제 실패: {e}"
+            print(error_msg)
+            raise Exception(error_msg)
+    
+    @staticmethod
+    def get_chromedriver_path():
+        """현재 실행 파일 경로 기준으로 ChromeDriver 찾기
+        
+        우선순위:
+        1. driver 폴더 내 버전별 폴더 (예: driver/131.0.6778.86/chromedriver.exe)
+        2. 루트 폴더 내 버전별 폴더 (예: 141/chromedriver.exe) - 하위 호환성
+        """
+        base_path = AWSManager.get_base_path()
+        chrome_driver_dirs = []
+        
+        # 1. driver 폴더 확인 (우선순위 1)
+        driver_dir = os.path.join(base_path, 'driver')
+        if os.path.exists(driver_dir):
+            for item in os.listdir(driver_dir):
+                item_path = os.path.join(driver_dir, item)
+                if os.path.isdir(item_path):
+                    driver_exe = os.path.join(item_path, 'chromedriver.exe')
+                    if os.path.isfile(driver_exe):
+                        # 버전 문자열을 숫자로 변환 (예: "131.0.6778.86" -> 131006778086)
+                        try:
+                            version_parts = item.split('.')
+                            version_number = int(''.join(part.zfill(3) for part in version_parts))
+                            chrome_driver_dirs.append((version_number, driver_exe, item))
+                        except:
+                            # 버전 파싱 실패 시 0으로 처리
+                            chrome_driver_dirs.append((0, driver_exe, item))
+        
+        # 2. 루트 폴더 내 숫자 폴더 확인 (하위 호환성)
+        for item in os.listdir(base_path):
+            item_path = os.path.join(base_path, item)
+            if os.path.isdir(item_path) and item.isdigit():
+                driver_exe = os.path.join(item_path, 'chromedriver.exe')
+                if os.path.isfile(driver_exe):
+                    version_number = int(item) * 1000000000  # 높은 우선순위 유지
+                    chrome_driver_dirs.append((version_number, driver_exe, item))
+        
+        if chrome_driver_dirs:
+            # 버전 번호가 가장 높은 것 사용
+            chrome_driver_dirs.sort(reverse=True)
+            chromedriver_path = chrome_driver_dirs[0][1]
+            version_str = chrome_driver_dirs[0][2]
+            print(f"[get_chromedriver_path] ChromeDriver 발견: {chromedriver_path} (버전: {version_str})")
+            return chromedriver_path
+        else:
+            error_msg = f"""ChromeDriver를 찾을 수 없습니다.
+
+해결 방법:
+1. Settings 메뉴에서 'ChromeDriver 자동 다운로드' 실행
+2. 수동 설치: {base_path}\\driver 폴더에 버전별 폴더를 만들고 chromedriver.exe를 넣어주세요.
+   예: {base_path}\\driver\\131.0.6778.86\\chromedriver.exe"""
+            raise FileNotFoundError(error_msg)
+    
+    @staticmethod
+    def find_chrome_for_testing(chromedriver_path):
+        """ChromeDriver와 같은 버전의 Chrome for Testing 찾기"""
+        # ChromeDriver가 있는 폴더에서 Chrome 찾기
+        chromedriver_dir = os.path.dirname(chromedriver_path)
+        
+        # 가능한 Chrome 경로들
+        chrome_paths = [
+            os.path.join(chromedriver_dir, 'chrome-win64', 'chrome.exe'),
+            os.path.join(chromedriver_dir, 'chrome', 'chrome.exe'),
+            os.path.join(chromedriver_dir, 'chrome.exe'),
+        ]
+        
+        for path in chrome_paths:
+            if os.path.isfile(path):
+                print(f"[find_chrome_for_testing] Chrome for Testing 발견: {path}")
+                return path
+        
+        return None
+    
     @staticmethod
     def start_driver():
         """Chrome 디버깅 모드 드라이버 시작"""
         chrome_debugging_address = "http://127.0.0.1:9222/json"
-        chrome_user_data_dir = r'"C:\ChromeTEMP"'
-        chrome_executable_path = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        chrome_user_data_dir = r'C:\ChromeTEMP'
+        
+        print("[start_driver] Chrome 드라이버 시작...")
+        
+        # 사용자 데이터 디렉터리 확인 및 생성
+        if not os.path.exists(chrome_user_data_dir):
+            os.makedirs(chrome_user_data_dir)
+            print(f"[start_driver] 사용자 데이터 디렉터리 생성: {chrome_user_data_dir}")
+        else:
+            print(f"[start_driver] 기존 사용자 데이터 디렉터리 사용: {chrome_user_data_dir}")
+        
+        # ChromeDriver 경로 찾기
+        try:
+            chromedriver_path = AWSManager.get_chromedriver_path()
+            chromedriver_version = os.path.basename(os.path.dirname(chromedriver_path))
+        except FileNotFoundError as e:
+            print(f"[start_driver] 오류: {e}")
+            raise
+        
+        # 1. ChromeDriver와 같은 버전의 Chrome for Testing 찾기 (우선순위 1)
+        chrome_for_testing = AWSManager.find_chrome_for_testing(chromedriver_path)
+        
+        if chrome_for_testing:
+            chrome_executable_path = chrome_for_testing
+            print(f"[start_driver] ✅ Chrome for Testing 사용 (버전 {chromedriver_version})")
+            print(f"[start_driver] Chrome 경로: {chrome_executable_path}")
+        else:
+            # 2. 시스템 Chrome 사용 (백업)
+            system_chrome = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+            if not os.path.isfile(system_chrome):
+                alt_path = r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
+                if os.path.isfile(alt_path):
+                    system_chrome = alt_path
+                else:
+                    error_msg = f"""
+Chrome을 찾을 수 없습니다!
+
+ChromeDriver 버전: {chromedriver_version}
+
+해결 방법:
+1. Chrome for Testing {chromedriver_version} 다운로드:
+   https://googlechromelabs.github.io/chrome-for-testing/
+
+2. 다운로드한 chrome-win64.zip을 다음 경로에 압축 해제:
+   {os.path.dirname(chromedriver_path)}\\chrome-win64\\
+
+3. 프로그램 재실행
+
+또는 시스템 Chrome을 설치하세요.
+"""
+                    print(error_msg)
+                    raise FileNotFoundError(error_msg)
+            
+            chrome_executable_path = system_chrome
+            print(f"[start_driver] ⚠️ 시스템 Chrome 사용 (버전 불일치 가능)")
+            print(f"[start_driver] Chrome 경로: {chrome_executable_path}")
+            print(f"[start_driver] ChromeDriver 버전 {chromedriver_version}과 일치하지 않으면 오류가 발생할 수 있습니다.")
         
         try:
             # 이미 실행 중인지 확인
-            response = requests.get(chrome_debugging_address)
+            print("[start_driver] 기존 Chrome 디버깅 세션 확인 중...")
+            response = requests.get(chrome_debugging_address, timeout=2)
             if response.status_code == 200:
+                print("[start_driver] ✅ 기존 Chrome 세션 발견, 연결 중... (로그인 캐시 유지)")
                 chrome_options = Options()
                 chrome_options.debugger_address = "127.0.0.1:9222"
-                driver = webdriver.Chrome(options=chrome_options)
+                
+                service = Service(executable_path=chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
                 
                 # 새 탭 열기
                 driver.execute_script("window.open('');")
                 new_tab = driver.window_handles[-1]
                 driver.switch_to.window(new_tab)
+                print("[start_driver] 기존 Chrome 세션 연결 완료 (로그인 상태 유지됨)")
                 return driver
         except requests.ConnectionError:
-            pass
+            print("[start_driver] 기존 Chrome 세션 없음, 새로 시작...")
+        except Exception as e:
+            print(f"[start_driver] 기존 Chrome 연결 오류: {e}")
         
         # 새로 시작
-        subprocess.Popen(f'{chrome_executable_path} --remote-debugging-port=9222 --user-data-dir={chrome_user_data_dir}')
-        time.sleep(2)
+        print(f"[start_driver] Chrome 브라우저 실행: {chrome_executable_path}")
+        print(f"[start_driver] 사용자 데이터 디렉터리: {chrome_user_data_dir}")
+        print(f"[start_driver] 💡 로그인 정보는 {chrome_user_data_dir}에 저장됩니다.")
         
+        # Chrome 실행 옵션 설정
+        chrome_args = [
+            chrome_executable_path,
+            '--remote-debugging-port=9222',
+            f'--user-data-dir={chrome_user_data_dir}',
+            '--no-first-run',  # 첫 실행 팝업 제거
+            '--no-default-browser-check',  # 기본 브라우저 확인 제거
+        ]
+        
+        try:
+            process = subprocess.Popen(
+                chrome_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            print(f"[start_driver] Chrome 프로세스 시작됨 (PID: {process.pid})")
+        except Exception as e:
+            print(f"[start_driver] Chrome 실행 오류: {e}")
+            raise
+        
+        time.sleep(4)  # Chrome 시작 대기
+        
+        print(f"[start_driver] WebDriver 연결 시도... (ChromeDriver: {chromedriver_path})")
         chrome_options = Options()
         chrome_options.debugger_address = "127.0.0.1:9222"
-        chromedriver_autoinstaller.install(True)
-        driver = webdriver.Chrome(options=chrome_options)
+        
+        try:
+            service = Service(executable_path=chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print("[start_driver] WebDriver 연결 성공")
+        except Exception as e:
+            print(f"[start_driver] WebDriver 연결 실패: {e}")
+            raise
         
         # 새 탭 열기
         driver.execute_script("window.open('');")
         new_tab = driver.window_handles[-1]
         driver.switch_to.window(new_tab)
         
+        print("[start_driver] Chrome 드라이버 시작 완료")
+        print("[start_driver] 💡 팁: 이 Chrome 창을 닫지 않고 유지하면 다음 실행 시 로그인 상태가 유지됩니다.")
         return driver
     
     @staticmethod
     def upload_server_build(driver, revision: int, zip_path: str, aws_link: str, 
                            branch: str = 'game', build_type: str = 'DEV', 
                            full_build_name: str = 'TEST'):
-        """서버 빌드 업로드"""
+        """서버 빌드 업로드 (TeamCity 방식)"""
         try:
             if driver is None:
                 driver = AWSManager.start_driver()
-                driver.implicitly_wait(10)
-                driver.get(aws_link)
-                driver.implicitly_wait(10)
-                try:
-                    driver.find_element(By.XPATH, '//*[@id="social-oidc"]').click()
-                except:
-                    print('로그인 스킵...')
             
+            # 1. TeamCity 빌드 배포 페이지 접속
+            teamcity_url = "https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_Deployment_DeployBuild?mode=branches#all-projects"
+            print(f"[서버업로드] TeamCity 페이지 접속: {teamcity_url}")
+            driver.get(teamcity_url)
             driver.implicitly_wait(10)
+            time.sleep(2)
             
-            # CONTAINER GAMESERVERS 클릭
-            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
-            driver.implicitly_wait(5)
-            time.sleep(0.5)
+            # 2. Run 버튼 클릭 (클릭 가능할 때까지 대기)
+            print("[서버업로드] Run 버튼 대기 중...")
+            run_button_xpath = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button'
+            wait = WebDriverWait(driver, 30)
+            run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath)))
+            print("[서버업로드] Run 버튼 클릭")
+            run_button.click()
+            time.sleep(1)
             
-            # UPLOAD CUSTOM SERVER 클릭
-            driver.find_element(By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[6]/span/span').click()
-            time.sleep(0.5)
-            driver.implicitly_wait(5)
+            # 3. 빌드 경로 입력 (텍스트 입력 가능할 때까지 대기)
+            print("[서버업로드] 빌드 경로 입력 필드 대기 중...")
+            path_input_xpath = '//*[@id="parameter_build_to_deploy_nas_path_804258969"]'
+            path_input = wait.until(EC.element_to_be_clickable((By.XPATH, path_input_xpath)))
             
-            # Your local location
-            val_yourLocalLocation = '/html/body/div[3]/div[1]/div[2]/form/div[1]/div[2]/div/div'
-            driver.find_element(By.XPATH, val_yourLocalLocation).click()
-            driver.find_element(By.XPATH, val_yourLocalLocation).send_keys('Seoul')
-            driver.find_element(By.XPATH, val_yourLocalLocation).send_keys(Keys.RETURN)
-            time.sleep(0.5)
+            # 빌드 경로 생성 (예: \\pubg-pds\PBB\Builds\CompileBuild_DEV_game_dev_SEL294706_r357283)
+            # full_build_name에서 정보 추출
+            build_path = f"\\\\pubg-pds\\PBB\\Builds\\{full_build_name}"
+            print(f"[서버업로드] 빌드 경로 입력: {build_path}")
+            path_input.clear()
+            path_input.send_keys(build_path)
+            time.sleep(1)
             
-            # Branch
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/form/div[2]/div[2]/div/input').send_keys(branch)
+            # 4. Run 버튼 클릭 (최종 실행, 클릭 가능할 때까지 대기)
+            print("[서버업로드] 최종 Run 버튼 대기 중...")
+            final_run_button_xpath = '//*[@id="runCustomBuildButton"]'
+            final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, final_run_button_xpath)))
+            print("[서버업로드] 최종 Run 버튼 클릭")
+            final_run_button.click()
+            time.sleep(2)
             
-            # Revision
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/form/div[3]/div[2]/div/input').send_keys(f'{build_type}_{revision}')
-            
-            # Input File
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/form/div[4]/div[2]/input').send_keys(zip_path)
-            
-            # Upload 버튼 클릭
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/form/div[5]/div/button').click()
-            driver.implicitly_wait(5)
-            
-            # 업로드 진행률 모니터링
-            count = driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/form/div[6]/div/div/div[2]')
-            while True:
-                text = count.text
-                match = re.findall(r"\d+\.\d+|\d+", text)
-                if match:
-                    progress_value = float(match[0])
-                    print(f"업로드 진행률: {progress_value}%")
-                    if progress_value >= 100:
-                        print("커스텀 업로드 완료")
-                        try:
-                            export_upload_result(aws_link, full_build_name, "aws_upload", ":update_done:")
-                        except:
-                            print("export_upload_result 오류")
-                        time.sleep(1)
-                        break
-                else:
-                    print("진행률 추출 실패:", text)
-                time.sleep(1)
-        except Exception as e:
-            print(f"업로드 오류: {e}")
+            print("[서버업로드] 배포 요청 완료")
             try:
-                export_upload_result(aws_link, full_build_name, "aws_upload", ":failed:")
+                export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":update_done:")
             except:
                 print("export_upload_result 오류")
+                
+        except TimeoutException as e:
+            print(f"[서버업로드] 타임아웃 오류: {e}")
+            try:
+                export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":timeout:")
+            except:
+                print("export_upload_result 오류")
+            raise Exception(f"서버 업로드 타임아웃: 요소를 찾을 수 없습니다 - {e}")
+        except Exception as e:
+            print(f"[서버업로드] 오류: {e}")
+            try:
+                export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":failed:")
+            except:
+                print("export_upload_result 오류")
+            raise
     
     @staticmethod
     def update_server_container(driver, revision: int, aws_link: str, branch: str = 'game', 
@@ -136,20 +451,31 @@ class AWSManager:
                                full_build_name: str = 'none'):
         """서버 컨테이너 패치"""
         try:
+            print(f"[update_server_container] 시작 - revision: {revision}, branch: {branch}, build_type: {build_type}")
+            print(f"[update_server_container] AWS URL: {aws_link}")
+            
             if branch == "":
                 branch = 'game'
+                print(f"[update_server_container] branch 기본값 설정: {branch}")
             
             if driver is None:
+                print("[update_server_container] 드라이버 시작 중...")
                 driver = AWSManager.start_driver()
                 driver.implicitly_wait(10)
+                
+                print(f"[update_server_container] AWS 페이지 이동: {aws_link}")
                 driver.get(aws_link)
                 driver.implicitly_wait(10)
+                
                 try:
+                    print("[update_server_container] 로그인 확인 중...")
                     driver.find_element(By.XPATH, '//*[@id="social-oidc"]').click()
+                    print("[update_server_container] 로그인 버튼 클릭")
                 except:
-                    print('로그인 스킵...')
+                    print('[update_server_container] 로그인 스킵 (이미 로그인됨)')
             
             driver.implicitly_wait(10)
+            print("[update_server_container] 패치 작업 시작...")
             
             # CONTAINER GAMESERVERS 클릭
             driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
@@ -185,7 +511,8 @@ class AWSManager:
             
             # TAG 입력
             time.sleep(1)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(f'{branch}-{build_type}_{revision}')
+            #full_build_name
+            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(full_build_name)
             time.sleep(1)
             driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span').click()
             time.sleep(0.5)
@@ -218,6 +545,8 @@ class AWSManager:
                 export_upload_result(aws_link, full_build_name, "aws_apply", ":failed:")
             except:
                 print("export_upload_result 오류")
+            # 예외를 다시 발생시켜서 호출자에게 실패를 알림
+            raise
     
     @staticmethod
     def run_teamcity_build(driver, url_link: str = 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects',

@@ -4,6 +4,8 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdi
                              QRadioButton, QButtonGroup, QMessageBox, QFormLayout, QFileDialog)
 from PyQt5.QtCore import QTime, Qt
 from typing import Dict, Any, Optional, List
+import json
+import os
 
 
 class ScheduleDialog(QDialog):
@@ -28,10 +30,11 @@ class ScheduleDialog(QDialog):
         self.default_src_path = default_src_path
         self.default_dest_path = default_dest_path
         self.is_edit_mode = schedule is not None
+        self.parent_window = parent  # 부모 윈도우 참조 저장 (find_latest_build 사용)
         
         self.setWindowTitle("스케줄 편집" if self.is_edit_mode else "스케줄 생성")
         self.setModal(True)
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(550)
         
         self.init_ui()
         
@@ -57,6 +60,10 @@ class ScheduleDialog(QDialog):
         # AWS 설정
         aws_group = self.create_aws_settings_group()
         layout.addWidget(aws_group)
+        
+        # 슬랙 알림 설정
+        slack_group = self.create_slack_settings_group()
+        layout.addWidget(slack_group)
         
         # 버튼
         button_layout = self.create_buttons()
@@ -167,11 +174,44 @@ class ScheduleDialog(QDialog):
         dest_layout.addWidget(dest_browse_btn)
         layout.addRow("로컬 경로:", dest_layout)
         
-        # 빌드명
+        # 빌드 선택 모드: 최신 / 지정
+        mode_layout = QHBoxLayout()
+        self.build_mode_group = QButtonGroup()
+        
+        self.build_mode_latest = QRadioButton("최신")
+        self.build_mode_latest.setChecked(True)
+        self.build_mode_latest.toggled.connect(self.on_build_mode_changed)
+        self.build_mode_group.addButton(self.build_mode_latest, 0)
+        mode_layout.addWidget(self.build_mode_latest)
+        
+        self.build_mode_fixed = QRadioButton("지정")
+        self.build_mode_group.addButton(self.build_mode_fixed, 1)
+        self.build_mode_fixed.toggled.connect(self.on_build_mode_changed)
+        mode_layout.addWidget(self.build_mode_fixed)
+        
+        mode_layout.addStretch()
+        layout.addRow("빌드 모드:", mode_layout)
+        
+        # Prefix (빌드명 필터) - 항상 활성화
+        self.prefix_edit = QLineEdit()
+        self.prefix_edit.setPlaceholderText("예: game_SEL, game_progression")
+        layout.addRow("Prefix:", self.prefix_edit)
+        
+        # 빌드명 드롭다운 + 새로고침 (우측에 배치)
+        buildname_layout = QHBoxLayout()
         self.buildname_combo = QComboBox()
         self.buildname_combo.setEditable(True)
         self.buildname_combo.addItems(self.buildnames)
-        layout.addRow("빌드명:", self.buildname_combo)
+        self.buildname_combo.setEnabled(False)  # 기본적으로 '최신' 모드이므로 비활성화
+        buildname_layout.addWidget(self.buildname_combo)
+        
+        self.refresh_builds_btn = QPushButton("🔄")
+        self.refresh_builds_btn.setFixedWidth(40)
+        self.refresh_builds_btn.setToolTip("Prefix 기준으로 빌드명 목록 새로고침")
+        self.refresh_builds_btn.clicked.connect(self.refresh_build_list)
+        buildname_layout.addWidget(self.refresh_builds_btn)
+        
+        layout.addRow("빌드명:", buildname_layout)
         
         group.setLayout(layout)
         return group
@@ -208,6 +248,148 @@ class ScheduleDialog(QDialog):
         group.setLayout(layout)
         return group
     
+    def create_slack_settings_group(self) -> QGroupBox:
+        """슬랙 알림 설정 그룹"""
+        group = QGroupBox("슬랙 알림 (선택사항)")
+        layout = QFormLayout()
+        
+        # 슬랙 알림 활성화 체크박스
+        self.slack_enabled_checkbox = QCheckBox("슬랙 알림 사용")
+        self.slack_enabled_checkbox.toggled.connect(self.on_slack_enabled_toggled)
+        layout.addRow("", self.slack_enabled_checkbox)
+        
+        # 알림 타입 선택
+        notification_type_layout = QHBoxLayout()
+        self.notification_type_group = QButtonGroup()
+        
+        self.notification_standalone_radio = QRadioButton("단독 알림")
+        self.notification_standalone_radio.setChecked(True)
+        self.notification_standalone_radio.setEnabled(False)
+        self.notification_standalone_radio.toggled.connect(self.on_notification_type_changed)
+        self.notification_type_group.addButton(self.notification_standalone_radio, 0)
+        notification_type_layout.addWidget(self.notification_standalone_radio)
+        
+        self.notification_thread_radio = QRadioButton("스레드 댓글 알림")
+        self.notification_thread_radio.setEnabled(False)
+        self.notification_type_group.addButton(self.notification_thread_radio, 1)
+        notification_type_layout.addWidget(self.notification_thread_radio)
+        
+        notification_type_layout.addStretch()
+        layout.addRow("알림 타입:", notification_type_layout)
+        
+        # Webhook URL 선택/입력 (단독 알림용)
+        webhook_layout = QHBoxLayout()
+        
+        # 드롭다운 (hook.json에서 로드)
+        self.webhook_combo = QComboBox()
+        self.webhook_combo.setEditable(True)
+        self.webhook_combo.setPlaceholderText("Webhook URL을 선택하거나 직접 입력하세요")
+        self.webhook_combo.setEnabled(False)
+        self.load_webhook_urls()
+        webhook_layout.addWidget(self.webhook_combo)
+        
+        # 새로고침 버튼
+        refresh_webhook_btn = QPushButton("🔄")
+        refresh_webhook_btn.setFixedWidth(40)
+        refresh_webhook_btn.setToolTip("hook.json에서 Webhook URL 목록 새로고침")
+        refresh_webhook_btn.clicked.connect(self.load_webhook_urls)
+        webhook_layout.addWidget(refresh_webhook_btn)
+        
+        layout.addRow("Webhook URL:", webhook_layout)
+        
+        # Bot Token 입력 (스레드 댓글용)
+        self.bot_token_edit = QLineEdit()
+        self.bot_token_edit.setPlaceholderText("xoxb-xxxxx... (스레드 댓글 알림 시 필요)")
+        self.bot_token_edit.setEnabled(False)
+        self.bot_token_edit.setEchoMode(QLineEdit.Password)
+        layout.addRow("Bot Token:", self.bot_token_edit)
+        
+        # 채널 ID 입력 (스레드 댓글용)
+        self.channel_id_edit = QLineEdit()
+        self.channel_id_edit.setPlaceholderText("C0XXXXXXX (공개채널) 또는 G0XXXXXXX (비공개)")
+        self.channel_id_edit.setEnabled(False)
+        self.channel_id_edit.setToolTip(
+            "채널 ID 찾는 방법:\n"
+            "1. Slack 채널 클릭\n"
+            "2. 오른쪽 상단 ⋮ 메뉴\n"
+            "3. '채널 세부정보 보기'\n"
+            "4. 하단에서 채널 ID 복사\n\n"
+            "공개 채널: C로 시작\n"
+            "비공개 채널: G로 시작\n"
+            "DM: D로 시작 (권장하지 않음)"
+        )
+        layout.addRow("채널 ID:", self.channel_id_edit)
+        
+        # 스레드 검색 키워드 입력 (스레드 댓글용)
+        self.thread_keyword_edit = QLineEdit()
+        self.thread_keyword_edit.setPlaceholderText("예: 251110 빌드 세팅 스레드")
+        self.thread_keyword_edit.setEnabled(False)
+        layout.addRow("스레드 키워드:", self.thread_keyword_edit)
+        
+        group.setLayout(layout)
+        return group
+    
+    def load_webhook_urls(self):
+        """hook.json에서 Webhook URL 목록 로드"""
+        hook_file = 'hook.json'
+        
+        # 기존 항목 저장 (사용자가 직접 입력한 경우 보존)
+        current_text = self.webhook_combo.currentText()
+        
+        self.webhook_combo.clear()
+        self.webhook_combo.addItem("", "")  # 빈 항목
+        
+        if os.path.exists(hook_file):
+            try:
+                with open(hook_file, 'r', encoding='utf-8') as f:
+                    hooks = json.load(f)
+                
+                if isinstance(hooks, list):
+                    for hook in hooks:
+                        if isinstance(hook, dict):
+                            name = hook.get('name', '')
+                            url = hook.get('url', '')
+                            if name and url:
+                                self.webhook_combo.addItem(f"{name} ({url[:30]}...)", url)
+            except Exception as e:
+                print(f"hook.json 로드 오류: {e}")
+        
+        # 이전 값 복원
+        if current_text:
+            self.webhook_combo.setEditText(current_text)
+    
+    def on_slack_enabled_toggled(self, checked: bool):
+        """슬랙 알림 활성화 토글"""
+        self.notification_standalone_radio.setEnabled(checked)
+        self.notification_thread_radio.setEnabled(checked)
+        
+        # 알림 타입에 따라 필드 활성화
+        if checked:
+            self.on_notification_type_changed()
+        else:
+            # 모든 필드 비활성화
+            self.webhook_combo.setEnabled(False)
+            self.bot_token_edit.setEnabled(False)
+            self.channel_id_edit.setEnabled(False)
+            self.thread_keyword_edit.setEnabled(False)
+    
+    def on_notification_type_changed(self):
+        """알림 타입 변경 (단독/스레드)"""
+        is_standalone = self.notification_standalone_radio.isChecked()
+        
+        if is_standalone:
+            # 단독 알림: Webhook URL만 활성화
+            self.webhook_combo.setEnabled(True)
+            self.bot_token_edit.setEnabled(False)
+            self.channel_id_edit.setEnabled(False)
+            self.thread_keyword_edit.setEnabled(False)
+        else:
+            # 스레드 댓글: 모든 필드 활성화
+            self.webhook_combo.setEnabled(True)  # 폴백용으로 항상 필요
+            self.bot_token_edit.setEnabled(True)
+            self.channel_id_edit.setEnabled(True)
+            self.thread_keyword_edit.setEnabled(True)
+    
     def create_buttons(self) -> QHBoxLayout:
         """버튼 생성"""
         layout = QHBoxLayout()
@@ -234,6 +416,64 @@ class ScheduleDialog(QDialog):
     def on_option_changed(self, option: str):
         """실행 옵션 변경 시 (필요시 추가 처리)"""
         pass
+    
+    def on_build_mode_changed(self):
+        """빌드 모드 변경 (최신 / 지정)"""
+        is_fixed_mode = self.build_mode_fixed.isChecked()
+        # 지정 모드일 때만 빌드명 드롭다운 활성화
+        self.buildname_combo.setEnabled(is_fixed_mode)
+        # Prefix는 항상 활성화 (self.prefix_edit는 항상 사용 가능)
+    
+    def refresh_build_list(self):
+        """Prefix 기준으로 빌드명 드롭다운 새로고침"""
+        prefix = self.prefix_edit.text().strip()
+        if not prefix:
+            QMessageBox.warning(self, "입력 오류", "Prefix를 입력하세요.")
+            return
+        
+        src_path = self.src_path_edit.text().strip()
+        if not src_path:
+            QMessageBox.warning(self, "입력 오류", "소스 경로를 입력하세요.")
+            return
+        
+        import os
+        import re
+        
+        if not os.path.isdir(src_path):
+            QMessageBox.warning(self, "경로 오류", f"소스 경로가 존재하지 않습니다:\n{src_path}")
+            return
+        
+        try:
+            # Prefix 포함된 폴더 찾기
+            matching_folders = []
+            for folder in os.listdir(src_path):
+                folder_path = os.path.join(src_path, folder)
+                if os.path.isdir(folder_path) and prefix in folder:
+                    matching_folders.append(folder)
+            
+            if not matching_folders:
+                QMessageBox.information(self, "결과 없음", f"'{prefix}' Prefix를 포함한 빌드가 없습니다.")
+                return
+            
+            # 리비전 기준 정렬 (최신순)
+            def extract_revision(name: str) -> int:
+                m = re.search(r'(?:^|_)r(\d+)(?:$|_)', name)
+                if m:
+                    return int(m.group(1))
+                m2 = re.search(r'r(\d+)', name)
+                return int(m2.group(1)) if m2 else -1
+            
+            matching_folders.sort(key=extract_revision, reverse=True)
+            
+            # 빌드명 드롭다운 업데이트
+            self.buildname_combo.clear()
+            self.buildname_combo.addItems(matching_folders)
+            
+            QMessageBox.information(self, "새로고침 완료", 
+                                   f"{len(matching_folders)}개의 빌드를 찾았습니다.\n최신: {matching_folders[0]}")
+        
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"빌드 목록 새로고침 오류:\n{e}")
     
     def load_schedule_data(self):
         """스케줄 데이터 로드 (편집 모드)"""
@@ -277,6 +517,18 @@ class ScheduleDialog(QDialog):
         if dest_path:
             self.dest_path_edit.setText(dest_path)
         
+        # 빌드 모드 (최신 / 지정)
+        build_mode = self.schedule.get('build_mode', 'latest')
+        if build_mode == 'fixed':
+            self.build_mode_fixed.setChecked(True)
+        else:
+            self.build_mode_latest.setChecked(True)
+        
+        # Prefix
+        prefix = self.schedule.get('prefix', '')
+        self.prefix_edit.setText(prefix)
+        
+        # 빌드명
         buildname = self.schedule.get('buildname', '')
         idx = self.buildname_combo.findText(buildname)
         if idx >= 0:
@@ -287,6 +539,37 @@ class ScheduleDialog(QDialog):
         # AWS 설정
         self.awsurl_edit.setText(self.schedule.get('awsurl', ''))
         self.branch_edit.setText(self.schedule.get('branch', ''))
+        
+        # 슬랙 알림 설정
+        slack_webhook = self.schedule.get('slack_webhook', '')
+        slack_enabled = self.schedule.get('slack_enabled', False)
+        notification_type = self.schedule.get('notification_type', 'standalone')
+        bot_token = self.schedule.get('bot_token', '')
+        channel_id = self.schedule.get('channel_id', '')
+        thread_keyword = self.schedule.get('thread_keyword', '')
+        
+        self.slack_enabled_checkbox.setChecked(slack_enabled)
+        
+        # 알림 타입 설정
+        if notification_type == 'thread':
+            self.notification_thread_radio.setChecked(True)
+        else:
+            self.notification_standalone_radio.setChecked(True)
+        
+        # Webhook URL
+        if slack_webhook:
+            # Webhook URL이 드롭다운에 있는지 확인
+            idx = self.webhook_combo.findData(slack_webhook)
+            if idx >= 0:
+                self.webhook_combo.setCurrentIndex(idx)
+            else:
+                # 없으면 직접 입력된 것으로 설정
+                self.webhook_combo.setEditText(slack_webhook)
+        
+        # 스레드 댓글 알림 설정
+        self.bot_token_edit.setText(bot_token)
+        self.channel_id_edit.setText(channel_id)
+        self.thread_keyword_edit.setText(thread_keyword)
     
     def on_save(self):
         """저장 버튼 클릭"""
@@ -323,18 +606,54 @@ class ScheduleDialog(QDialog):
             option = self.option_combo.currentText()
             name = f"{option} - {time_str}"
         
+        # 빌드 모드
+        build_mode = 'fixed' if self.build_mode_fixed.isChecked() else 'latest'
+        
+        # 슬랙 알림 설정
+        slack_enabled = self.slack_enabled_checkbox.isChecked()
+        slack_webhook = ''
+        notification_type = 'standalone'
+        bot_token = ''
+        channel_id = ''
+        thread_keyword = ''
+        
+        if slack_enabled:
+            # 드롭다운에서 선택된 URL 또는 직접 입력된 URL
+            current_data = self.webhook_combo.currentData()
+            if current_data:
+                slack_webhook = current_data
+            else:
+                slack_webhook = self.webhook_combo.currentText().strip()
+            
+            # 알림 타입
+            notification_type = 'thread' if self.notification_thread_radio.isChecked() else 'standalone'
+            
+            # 스레드 댓글 알림 설정
+            if notification_type == 'thread':
+                bot_token = self.bot_token_edit.text().strip()
+                channel_id = self.channel_id_edit.text().strip()
+                thread_keyword = self.thread_keyword_edit.text().strip()
+        
         data = {
             'name': name,
             'time': self.time_edit.time().toString('HH:mm'),
             'option': self.option_combo.currentText(),
             'src_path': self.src_path_edit.text().strip(),
             'dest_path': self.dest_path_edit.text().strip(),
+            'build_mode': build_mode,
+            'prefix': self.prefix_edit.text().strip(),
             'buildname': self.buildname_combo.currentText(),
             'awsurl': self.awsurl_edit.text().strip(),
             'branch': self.branch_edit.text().strip(),
             'repeat_type': repeat_type,
             'repeat_days': repeat_days,
-            'enabled': self.enabled_checkbox.isChecked()
+            'enabled': self.enabled_checkbox.isChecked(),
+            'slack_enabled': slack_enabled,
+            'slack_webhook': slack_webhook,
+            'notification_type': notification_type,
+            'bot_token': bot_token,
+            'channel_id': channel_id,
+            'thread_keyword': thread_keyword
         }
         
         # 편집 모드면 ID 유지

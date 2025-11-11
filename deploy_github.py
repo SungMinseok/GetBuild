@@ -104,14 +104,18 @@ def create_github_release(version, changelog, token, zip_path):
     print(f"\n📝 릴리즈 노트 작성 중...")
     
     # 1. changelog.txt 파일 열기 (있는 경우)
+    auto_confirm = '--yes' in sys.argv or '-y' in sys.argv
     if Path('changelog.txt').exists():
-        try:
-            os.startfile('changelog.txt')
-            print("   changelog.txt 파일이 열렸습니다.")
-        except:
-            print("   changelog.txt 파일을 자동으로 열 수 없습니다.")
-        
-        input("\n👉 changelog.txt 편집 완료 후 엔터를 누르세요 (또는 그냥 엔터)...")
+        if not auto_confirm:
+            try:
+                os.startfile('changelog.txt')
+                print("   changelog.txt 파일이 열렸습니다.")
+            except:
+                print("   changelog.txt 파일을 자동으로 열 수 없습니다.")
+            
+            input("\n👉 changelog.txt 편집 완료 후 엔터를 누르세요 (또는 그냥 엔터)...")
+        else:
+            print("   자동 진행 모드: changelog.txt 사용")
         
         # 파일 내용 읽기
         with open('changelog.txt', 'r', encoding='utf-8') as f:
@@ -247,10 +251,15 @@ def main():
     print(f"   크기: {zip_path.stat().st_size / 1024 / 1024:.2f} MB")
     
     # 3. 확인
-    confirm = input("\n계속 진행하시겠습니까? (y/n): ").strip().lower()
-    if confirm != 'y':
-        print("❌ 배포 취소")
-        sys.exit(0)
+    auto_confirm = '--yes' in sys.argv or '-y' in sys.argv
+    if not auto_confirm:
+        confirm = input("\n계속 진행하시겠습니까? (y/n): ").strip().lower()
+        if confirm != 'y':
+            print("❌ 배포 취소")
+            sys.exit(0)
+    else:
+        print("\n자동 진행 모드 (--yes)")
+
     
     # 4. GitHub 토큰 로드
     token_data = load_token()

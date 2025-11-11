@@ -14,7 +14,6 @@ requests>=2.31.0
 colorama>=0.4.6
 tqdm>=4.64.1
 packaging>=21.0
-psutil>=5.9.0
 
 # 빌드 도구
 pyinstaller==5.13.2

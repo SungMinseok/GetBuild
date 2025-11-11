@@ -1,0 +1,18 @@
+[
+  {
+    "name": "QA 알림 채널",
+    "url": "https://hooks.slack.com/services/YOUR_WORKSPACE_ID/YOUR_CHANNEL_ID/YOUR_TOKEN_HERE"
+  },
+  {
+    "name": "개발 팀 채널",
+    "url": "https://hooks.slack.com/services/ANOTHER_WORKSPACE/ANOTHER_CHANNEL/ANOTHER_TOKEN"
+  },
+  {
+    "name": "테스트 채널",
+    "url": "https://hooks.slack.com/services/TEST_WORKSPACE/TEST_CHANNEL/TEST_TOKEN"
+  }
+]
+
+
+
+

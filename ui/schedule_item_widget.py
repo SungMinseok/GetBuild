@@ -83,12 +83,17 @@ class ScheduleItemWidget(QFrame):
         middle_layout.addStretch()
         info_layout.addLayout(middle_layout)
         
-        # 세 번째 줄: 옵션 + 브랜치
+        # 세 번째 줄: 옵션 + 브랜치 + 슬랙 알림
         bottom_layout = QHBoxLayout()
         
         self.option_label = QLabel()
         self.option_label.setStyleSheet("color: #888; font-size: 9pt;")
         bottom_layout.addWidget(self.option_label)
+        
+        # 슬랙 알림 상태 표시
+        self.slack_status_label = QLabel()
+        self.slack_status_label.setStyleSheet("color: #4CAF50; font-size: 9pt; font-weight: bold;")
+        bottom_layout.addWidget(self.slack_status_label)
         
         bottom_layout.addStretch()
         info_layout.addLayout(bottom_layout)
@@ -226,9 +231,17 @@ class ScheduleItemWidget(QFrame):
             repeat_text = repeat_type
         self.repeat_label.setText(f"🔁 {repeat_text}")
         
-        # 빌드명
+        # 빌드명 (빌드 모드 표시 포함)
+        build_mode = self.schedule.get('build_mode', 'latest')
+        prefix = self.schedule.get('prefix', '')
         buildname = self.schedule.get('buildname', '')
-        self.buildname_label.setText(f"📦 {buildname}")
+        
+        if build_mode == 'latest':
+            build_display = f"📦 [최신] {prefix}" if prefix else "📦 [최신]"
+        else:
+            build_display = f"📦 [지정] {buildname}" if buildname else "📦 [지정]"
+        
+        self.buildname_label.setText(build_display)
         
         # 옵션 + AWS URL + Branch
         option = self.schedule.get('option', '')
@@ -248,6 +261,15 @@ class ScheduleItemWidget(QFrame):
         
         option_text = f"⚙️ {option} | 🌐 AWS: {aws_display} | 🌿 Branch: {branch_display}"
         self.option_label.setText(option_text)
+        
+        # 슬랙 알림 상태
+        slack_enabled = self.schedule.get('slack_enabled', False)
+        slack_webhook = self.schedule.get('slack_webhook', '')
+        if slack_enabled and slack_webhook:
+            self.slack_status_label.setText("📢 슬랙 ON")
+            self.slack_status_label.setVisible(True)
+        else:
+            self.slack_status_label.setVisible(False)
         
         # 활성화 상태
         enabled = self.schedule.get('enabled', True)
