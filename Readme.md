@@ -185,9 +185,6 @@ Pull Request를 환영합니다! 큰 변경사항의 경우 먼저 이슈를 열
 
 ## 📞 지원
 
-- **Wiki**: [Krafton Wiki](https://wiki.krafton.com/pages/viewpage.action?pageId=4926105897)
 - **버그 리포트**: [GitHub Issues](https://github.com/SungMinseok/GetBuild/issues)
 
 ---
-
-**Made with ❤️ for PUBG Build Team**
