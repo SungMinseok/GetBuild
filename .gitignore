@@ -51,3 +51,5 @@ QuickBuild_update.zip
 BundleEditor_update.zip
 update_extract/
 update_installer.bat
+hook.json
+all_commits_with_diff.txt
