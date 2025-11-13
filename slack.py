@@ -135,7 +135,8 @@ def check_bot_permissions(bot_token: str) -> bool:
 
 
 def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str, 
-                           days_back: int = 7, fuzzy_match: bool = True) -> Optional[str]:
+                           days_back: int = 30, fuzzy_match: bool = True, 
+                           limit: int = 200) -> Optional[str]:
     """
     특정 채널에서 키워드가 포함된 최근 스레드 찾기
     
@@ -143,8 +144,9 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
         bot_token: Slack Bot Token (OAuth Token)
         channel_id: 검색할 채널 ID (C로 시작: 채널, G로 시작: 그룹, D로 시작: DM)
         keyword: 검색할 키워드 (예: "251110 빌드 세팅 스레드")
-        days_back: 검색할 기간 (일)
+        days_back: 검색할 기간 (일) - 기본 30일
         fuzzy_match: True면 키워드의 각 단어를 개별적으로도 검색
+        limit: 가져올 최대 메시지 수 (기본 200개)
     
     Returns:
         찾은 스레드의 timestamp (thread_ts), 없으면 None
@@ -194,24 +196,51 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
         
         # 검색 기간 설정 (Unix timestamp)
         oldest = (datetime.now() - timedelta(days=days_back)).timestamp()
+        oldest_date = datetime.fromtimestamp(oldest).strftime('%Y-%m-%d %H:%M:%S')
+        
+        print(f"[Slack] 검색 기간: {oldest_date} 이후 (최근 {days_back}일)")
         
         # 채널 히스토리 가져오기
+        print(f"[Slack] 최대 {limit}개의 메시지를 검색합니다...")
         response = client.conversations_history(
             channel=channel_id,
             oldest=str(oldest),
-            limit=100  # 최근 100개 메시지 검색
+            limit=limit  # 설정된 개수만큼 메시지 검색
         )
         
         if response['ok']:
             messages = response['messages']
             print(f"[Slack] {len(messages)}개의 메시지 검색됨")
             
-            # 디버깅: 처음 3개 메시지 내용 출력
-            print(f"[Slack] 🔍 디버깅: 최근 메시지 미리보기")
-            for idx, msg in enumerate(messages[:3]):
+            # Slack API는 최신 메시지부터 반환하지만, 명시적으로 정렬
+            # 최신 메시지가 먼저 오도록 timestamp 기준 내림차순 정렬
+            messages = sorted(messages, key=lambda m: float(m.get('ts', 0)), reverse=True)
+            
+            # 디버깅: 처음 5개 메시지 내용과 시간 출력
+            print(f"[Slack] 🔍 디버깅: 최신 메시지 미리보기 (최대 5개, 최신순)")
+            for idx, msg in enumerate(messages[:5]):
                 text = msg.get('text', '')
-                preview = text[:80] if text else '(빈 메시지)'
-                print(f"[Slack]    메시지 {idx+1}: {preview}")
+                ts = msg.get('ts', '0')
+                
+                # timestamp를 datetime으로 변환
+                try:
+                    msg_time = datetime.fromtimestamp(float(ts))
+                    time_str = msg_time.strftime('%Y-%m-%d %H:%M:%S')
+                    time_ago = datetime.now() - msg_time
+                    
+                    if time_ago.days > 0:
+                        time_ago_str = f"{time_ago.days}일 전"
+                    elif time_ago.seconds >= 3600:
+                        time_ago_str = f"{time_ago.seconds // 3600}시간 전"
+                    else:
+                        time_ago_str = f"{time_ago.seconds // 60}분 전"
+                except:
+                    time_str = "시간 불명"
+                    time_ago_str = "?"
+                
+                preview = text[:60] if text else '(빈 메시지)'
+                print(f"[Slack]    메시지 {idx+1} [{time_ago_str}]: {preview}")
+                print(f"[Slack]             시간: {time_str}")
             
             # 키워드가 포함된 메시지 찾기 (최신순)
             keyword_lower = keyword.lower()
