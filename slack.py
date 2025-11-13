@@ -194,27 +194,44 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
                 print(f"[Slack] 💡 권한 부족이지만 메시지 검색은 시도합니다.")
                 print(f"[Slack]    Bot Token에 'channels:read' 권한을 추가하면 더 나은 검증이 가능합니다.")
         
-        # 검색 기간 설정 (Unix timestamp)
-        oldest = (datetime.now() - timedelta(days=days_back)).timestamp()
+        # 검색 기간 설정 (Unix timestamp) - 필터링용
+        now = datetime.now()
+        oldest = (now - timedelta(days=days_back)).timestamp()
         oldest_date = datetime.fromtimestamp(oldest).strftime('%Y-%m-%d %H:%M:%S')
         
+        print(f"[Slack] 현재 시간: {now.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"[Slack] 검색 기간: {oldest_date} 이후 (최근 {days_back}일)")
-        
-        # 채널 히스토리 가져오기
         print(f"[Slack] 최대 {limit}개의 메시지를 검색합니다...")
+        
+        # 채널 히스토리 가져오기 (oldest 파라미터 없이 최신 메시지부터)
+        # oldest를 지정하지 않으면 Slack API는 최신 메시지부터 반환
         response = client.conversations_history(
             channel=channel_id,
-            oldest=str(oldest),
             limit=limit  # 설정된 개수만큼 메시지 검색
         )
         
         if response['ok']:
-            messages = response['messages']
-            print(f"[Slack] {len(messages)}개의 메시지 검색됨")
+            all_messages = response['messages']
+            print(f"[Slack] API에서 {len(all_messages)}개의 메시지 가져옴")
             
-            # Slack API는 최신 메시지부터 반환하지만, 명시적으로 정렬
+            # 검색 기간 내의 메시지만 필터링
+            messages = [msg for msg in all_messages if float(msg.get('ts', 0)) >= oldest]
+            print(f"[Slack] 검색 기간 내 메시지: {len(messages)}개")
+            
+            if len(messages) == 0:
+                print(f"[Slack] ⚠️ 검색 기간 내에 메시지가 없습니다.")
+                print(f"[Slack] 💡 days_back 값을 늘려보세요 (현재: {days_back}일)")
+                return None
+            
             # 최신 메시지가 먼저 오도록 timestamp 기준 내림차순 정렬
             messages = sorted(messages, key=lambda m: float(m.get('ts', 0)), reverse=True)
+            
+            # 가장 최신/오래된 메시지 시간 확인
+            newest_ts = float(messages[0].get('ts', 0))
+            oldest_ts = float(messages[-1].get('ts', 0))
+            newest_time = datetime.fromtimestamp(newest_ts).strftime('%Y-%m-%d %H:%M:%S')
+            oldest_time = datetime.fromtimestamp(oldest_ts).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[Slack] 메시지 범위: {newest_time} (최신) ~ {oldest_time} (가장 오래됨)")
             
             # 디버깅: 처음 5개 메시지 내용과 시간 출력
             print(f"[Slack] 🔍 디버깅: 최신 메시지 미리보기 (최대 5개, 최신순)")
