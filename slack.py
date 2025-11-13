@@ -1,4 +1,13 @@
-"""슬랙 메시지 전송 모듈"""
+"""슬랙 메시지 전송 모듈
+
+필요한 Slack Bot 권한:
+- chat:write - 메시지 전송
+- channels:history - 공개 채널 메시지 읽기
+- channels:read - 공개 채널 정보 읽기
+- groups:history - 비공개 채널 메시지 읽기 (비공개 채널 사용 시)
+- groups:read - 비공개 채널 정보 읽기 (비공개 채널 사용 시)
+- im:history - DM 메시지 읽기 (DM 사용 시)
+"""
 import os
 import json
 import requests
@@ -96,6 +105,35 @@ def send_slack_webhook(webhook_url: str, message: str,
         return False
 
 
+def check_bot_permissions(bot_token: str) -> bool:
+    """
+    Bot Token의 권한을 확인하고 출력
+    
+    Args:
+        bot_token: Slack Bot Token
+    
+    Returns:
+        권한 확인 성공 여부
+    """
+    try:
+        client = WebClient(token=bot_token)
+        response = client.auth_test()
+        
+        if response['ok']:
+            print(f"[Slack] ✅ Bot 인증 성공")
+            print(f"[Slack]    - Bot 이름: {response.get('user', 'unknown')}")
+            print(f"[Slack]    - Workspace: {response.get('team', 'unknown')}")
+            return True
+        else:
+            print(f"[Slack] ❌ Bot 인증 실패")
+            return False
+            
+    except SlackApiError as e:
+        print(f"[Slack] ❌ Bot Token 오류: {e.response.get('error')}")
+        print(f"[Slack] Bot Token이 유효한지 확인하세요.")
+        return False
+
+
 def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str, 
                            days_back: int = 7) -> Optional[str]:
     """
@@ -113,6 +151,13 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
     try:
         client = WebClient(token=bot_token)
         
+        # Bot Token 유효성 확인
+        print(f"[Slack] Bot 인증 확인 중...")
+        auth_response = client.auth_test()
+        if auth_response['ok']:
+            bot_name = auth_response.get('user', 'unknown')
+            print(f"[Slack] ✅ Bot 인증 성공: @{bot_name}")
+        
         # 채널 ID 유형 확인
         if channel_id.startswith('D'):
             print(f"[Slack] ⚠️ DM 채널 감지 (ID: {channel_id})")
@@ -125,6 +170,22 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
         else:
             print(f"[Slack] ⚠️ 알 수 없는 채널 ID 형식: {channel_id}")
             print(f"[Slack] 올바른 형식: C로 시작(공개), G로 시작(비공개), D로 시작(DM)")
+        
+        # 먼저 채널 정보를 가져와서 봇이 채널에 접근 가능한지 확인
+        try:
+            channel_info = client.conversations_info(channel=channel_id)
+            if channel_info['ok']:
+                is_member = channel_info['channel'].get('is_member', False)
+                channel_name = channel_info['channel'].get('name', 'unknown')
+                
+                if not is_member:
+                    print(f"[Slack] ⚠️ 경고: 봇이 #{channel_name} 채널에 추가되지 않았습니다.")
+                    print(f"[Slack] 💡 '/invite @봇이름' 명령으로 봇을 채널에 초대하세요.")
+                else:
+                    print(f"[Slack] ✅ 채널 접근 확인: #{channel_name}")
+        except SlackApiError as info_error:
+            # conversations_info 실패 시 계속 진행 (일부 채널 타입에서는 지원 안 됨)
+            print(f"[Slack] 채널 정보 조회 실패 (계속 진행): {info_error.response.get('error')}")
         
         # 검색 기간 설정 (Unix timestamp)
         oldest = (datetime.now() - timedelta(days=days_back)).timestamp()
@@ -183,19 +244,42 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
             print(f"  5. 새로운 Bot Token 복사하여 다시 설정")
         elif error_type == 'channel_not_found':
             print(f"[Slack] ❌ 채널 오류: 채널 ID '{channel_id}'를 찾을 수 없습니다.")
-            print(f"[Slack] 해결 방법:")
-            print(f"  1. 채널 ID 확인:")
+            print(f"[Slack] ")
+            print(f"[Slack] 🔍 가장 흔한 원인:")
+            print(f"  ⚠️  봇이 채널에 추가되지 않았습니다!")
+            print(f"")
+            print(f"[Slack] ✅ 해결 방법 (순서대로 시도):")
+            print(f"")
+            print(f"  1️⃣  먼저 봇을 채널에 초대하세요:")
+            print(f"     - Slack 채널로 이동")
+            print(f"     - 채널 메시지 입력창에 '/invite @봇이름' 입력")
+            print(f"     - 예: /invite @QuickBuild")
+            print(f"     - 봇이 추가되면 '○○○님이 #채널에 추가되었습니다' 메시지 확인")
+            print(f"")
+            print(f"  2️⃣  채널 ID가 정확한지 확인:")
+            print(f"     - 채널 클릭 → 오른쪽 상단 ⋮ → '채널 세부정보 보기'")
+            print(f"     - 하단에서 '채널 ID' 복사")
             print(f"     - 공개 채널: C로 시작 (예: C0123456789)")
             print(f"     - 비공개 채널: G로 시작 (예: G0123456789)")
-            print(f"     - DM: D로 시작 (예: D0123456789)")
-            print(f"  2. 올바른 채널 ID 얻는 방법:")
-            print(f"     - 채널 클릭 → 오른쪽 상단 ⋮ → '채널 세부정보 보기'")
-            print(f"     - 하단에서 채널 ID 복사")
-            print(f"  3. 봇을 채널에 추가: '/invite @앱이름'")
+            print(f"")
+            print(f"  3️⃣  Bot Token 권한 확인:")
+            print(f"     - https://api.slack.com/apps 접속")
+            print(f"     - 앱 선택 → 'OAuth & Permissions'")
+            print(f"     - 'Scopes'에서 다음 권한이 있는지 확인:")
+            if channel_id.startswith('G'):
+                print(f"       ✓ groups:history")
+                print(f"       ✓ groups:read")
+            else:
+                print(f"       ✓ channels:history")
+                print(f"       ✓ channels:read")
+            print(f"     - 권한이 없다면 추가 후 'Reinstall to Workspace'")
         elif error_type == 'not_in_channel':
             print(f"[Slack] ❌ 채널 접근 오류: 봇이 채널에 추가되지 않았습니다.")
-            print(f"[Slack] 해결 방법:")
-            print(f"  - 채널에서 '/invite @앱이름' 명령 실행")
+            print(f"[Slack] ")
+            print(f"[Slack] ✅ 해결 방법:")
+            print(f"  - Slack 채널로 이동")
+            print(f"  - 채널 메시지 입력창에 '/invite @봇이름' 입력")
+            print(f"  - 예: /invite @QuickBuild")
         else:
             print(f"[Slack] ❌ 스레드 검색 오류: {error_type}")
             if 'error' in e.response:
