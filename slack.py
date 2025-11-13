@@ -135,7 +135,7 @@ def check_bot_permissions(bot_token: str) -> bool:
 
 
 def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str, 
-                           days_back: int = 7) -> Optional[str]:
+                           days_back: int = 7, fuzzy_match: bool = True) -> Optional[str]:
     """
     특정 채널에서 키워드가 포함된 최근 스레드 찾기
     
@@ -144,6 +144,7 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
         channel_id: 검색할 채널 ID (C로 시작: 채널, G로 시작: 그룹, D로 시작: DM)
         keyword: 검색할 키워드 (예: "251110 빌드 세팅 스레드")
         days_back: 검색할 기간 (일)
+        fuzzy_match: True면 키워드의 각 단어를 개별적으로도 검색
     
     Returns:
         찾은 스레드의 timestamp (thread_ts), 없으면 None
@@ -185,7 +186,11 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
                     print(f"[Slack] ✅ 채널 접근 확인: #{channel_name}")
         except SlackApiError as info_error:
             # conversations_info 실패 시 계속 진행 (일부 채널 타입에서는 지원 안 됨)
-            print(f"[Slack] 채널 정보 조회 실패 (계속 진행): {info_error.response.get('error')}")
+            error_msg = info_error.response.get('error')
+            print(f"[Slack] 채널 정보 조회 실패 (계속 진행): {error_msg}")
+            if error_msg == 'missing_scope':
+                print(f"[Slack] 💡 권한 부족이지만 메시지 검색은 시도합니다.")
+                print(f"[Slack]    Bot Token에 'channels:read' 권한을 추가하면 더 나은 검증이 가능합니다.")
         
         # 검색 기간 설정 (Unix timestamp)
         oldest = (datetime.now() - timedelta(days=days_back)).timestamp()
@@ -201,19 +206,82 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
             messages = response['messages']
             print(f"[Slack] {len(messages)}개의 메시지 검색됨")
             
+            # 디버깅: 처음 3개 메시지 내용 출력
+            print(f"[Slack] 🔍 디버깅: 최근 메시지 미리보기")
+            for idx, msg in enumerate(messages[:3]):
+                text = msg.get('text', '')
+                preview = text[:80] if text else '(빈 메시지)'
+                print(f"[Slack]    메시지 {idx+1}: {preview}")
+            
             # 키워드가 포함된 메시지 찾기 (최신순)
-            for message in messages:
+            keyword_lower = keyword.lower()
+            
+            # fuzzy_match를 위한 키워드 분리
+            keyword_parts = keyword_lower.split() if fuzzy_match else [keyword_lower]
+            
+            print(f"[Slack] 검색 모드: {'퍼지 매칭' if fuzzy_match else '정확 매칭'}")
+            if fuzzy_match and len(keyword_parts) > 1:
+                print(f"[Slack] 검색 키워드 분리: {keyword_parts}")
+            
+            for idx, message in enumerate(messages):
+                # 다양한 필드에서 검색
                 text = message.get('text', '')
-                if keyword.lower() in text.lower():  # 대소문자 구분 없이 검색
+                
+                # attachments, blocks 등 다른 필드도 확인
+                attachments = message.get('attachments', [])
+                blocks = message.get('blocks', [])
+                
+                # 검색 대상 텍스트 수집
+                search_texts = [text]
+                
+                # attachments에서 텍스트 추출
+                for att in attachments:
+                    if 'text' in att:
+                        search_texts.append(att['text'])
+                    if 'pretext' in att:
+                        search_texts.append(att['pretext'])
+                    if 'title' in att:
+                        search_texts.append(att['title'])
+                
+                # blocks에서 텍스트 추출
+                for block in blocks:
+                    if block.get('type') == 'section' and 'text' in block:
+                        block_text = block['text'].get('text', '')
+                        search_texts.append(block_text)
+                
+                # 모든 텍스트에서 키워드 검색
+                all_text = ' '.join(search_texts).lower()
+                
+                # 정확 매칭 시도
+                if keyword_lower in all_text:
                     thread_ts = message.get('ts')
-                    print(f"[Slack] ✅ 스레드 발견: '{text[:50]}...' (ts: {thread_ts})")
+                    matched_text = text if text else search_texts[1] if len(search_texts) > 1 else '(내용 없음)'
+                    print(f"[Slack] ✅ 스레드 발견 (정확 매칭, 메시지 #{idx+1})")
+                    print(f"[Slack]    내용: '{matched_text[:60]}...'")
+                    print(f"[Slack]    thread_ts: {thread_ts}")
                     return thread_ts
+                
+                # fuzzy_match가 켜져 있으면 부분 매칭 시도
+                if fuzzy_match and len(keyword_parts) > 1:
+                    matched_parts = sum(1 for part in keyword_parts if part in all_text)
+                    match_ratio = matched_parts / len(keyword_parts)
+                    
+                    # 키워드의 70% 이상이 매칭되면 선택
+                    if match_ratio >= 0.7:
+                        thread_ts = message.get('ts')
+                        matched_text = text if text else search_texts[1] if len(search_texts) > 1 else '(내용 없음)'
+                        print(f"[Slack] ✅ 스레드 발견 (퍼지 매칭 {match_ratio*100:.0f}%, 메시지 #{idx+1})")
+                        print(f"[Slack]    내용: '{matched_text[:60]}...'")
+                        print(f"[Slack]    thread_ts: {thread_ts}")
+                        return thread_ts
             
             print(f"[Slack] ⚠️ 키워드 '{keyword}'가 포함된 스레드를 찾을 수 없습니다.")
             print(f"[Slack] 💡 팁:")
-            print(f"  - 키워드가 정확한지 확인하세요.")
+            print(f"  - 키워드가 정확한지 확인하세요. (입력된 키워드: '{keyword}')")
             print(f"  - 최근 {days_back}일 내의 메시지만 검색됩니다.")
             print(f"  - 대소문자는 구분하지 않습니다.")
+            print(f"  - 위 미리보기에서 키워드가 포함된 메시지가 있는지 확인하세요.")
+            print(f"  - 키워드를 더 짧게 입력하거나 핵심 단어만 사용해보세요.")
             return None
         else:
             print(f"[Slack] conversations.history 오류: {response.get('error')}")
