@@ -9,6 +9,7 @@ branch_settings.json
 # 민감한 정보
 token.json
 schedule.json
+schedule*.json
 hook.json
 
 # 빌드 결과물

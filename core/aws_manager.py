@@ -397,48 +397,94 @@ ChromeDriver 버전: {chromedriver_version}
             # 2. Run 버튼 클릭 (클릭 가능할 때까지 대기)
             print("[서버업로드] Run 버튼 대기 중...")
             run_button_xpath = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button'
-            wait = WebDriverWait(driver, 30)
-            run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath)))
-            print("[서버업로드] Run 버튼 클릭")
-            run_button.click()
-            time.sleep(1)
+            wait = WebDriverWait(driver, 60)  # 타임아웃을 60초로 증가
+            
+            # 페이지 로드 완료 대기
+            time.sleep(3)
+            
+            try:
+                run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath)))
+                print("[서버업로드] Run 버튼 클릭")
+                run_button.click()
+            except TimeoutException:
+                print("[서버업로드] ⚠️ Run 버튼을 찾을 수 없습니다. 대체 XPath 시도...")
+                # 대체 XPath 시도
+                alternative_xpath = "//button[contains(@class, 'btn-run') or contains(text(), 'Run')]"
+                try:
+                    run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_xpath)))
+                    run_button.click()
+                    print("[서버업로드] 대체 XPath로 Run 버튼 클릭 성공")
+                except:
+                    raise Exception("Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
+            
+            time.sleep(2)
             
             # 3. 빌드 경로 입력 (텍스트 입력 가능할 때까지 대기)
             print("[서버업로드] 빌드 경로 입력 필드 대기 중...")
             path_input_xpath = '//*[@id="parameter_build_to_deploy_nas_path_804258969"]'
-            path_input = wait.until(EC.element_to_be_clickable((By.XPATH, path_input_xpath)))
+            
+            try:
+                path_input = wait.until(EC.presence_of_element_located((By.XPATH, path_input_xpath)))
+                # 입력 가능할 때까지 추가 대기
+                wait.until(EC.element_to_be_clickable((By.XPATH, path_input_xpath)))
+            except TimeoutException:
+                print("[서버업로드] ⚠️ 빌드 경로 입력 필드를 찾을 수 없습니다. 대체 방법 시도...")
+                # name 속성으로 찾기 시도
+                try:
+                    path_input = wait.until(EC.presence_of_element_located((By.NAME, "parameter_build_to_deploy_nas_path")))
+                    print("[서버업로드] name 속성으로 입력 필드 찾기 성공")
+                except:
+                    # class나 placeholder로 찾기 시도
+                    try:
+                        path_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, 'path') or contains(@name, 'nas')]")))
+                        print("[서버업로드] placeholder 속성으로 입력 필드 찾기 성공")
+                    except:
+                        raise Exception("빌드 경로 입력 필드를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
             
             # 빌드 경로 생성 (예: \\pubg-pds\PBB\Builds\CompileBuild_DEV_game_dev_SEL294706_r357283)
-            # full_build_name에서 정보 추출
             build_path = f"\\\\pubg-pds\\PBB\\Builds\\{full_build_name}"
             print(f"[서버업로드] 빌드 경로 입력: {build_path}")
             path_input.clear()
             path_input.send_keys(build_path)
-            time.sleep(1)
+            time.sleep(2)
             
             # 4. Run 버튼 클릭 (최종 실행, 클릭 가능할 때까지 대기)
             print("[서버업로드] 최종 Run 버튼 대기 중...")
             final_run_button_xpath = '//*[@id="runCustomBuildButton"]'
-            final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, final_run_button_xpath)))
-            print("[서버업로드] 최종 Run 버튼 클릭")
-            final_run_button.click()
-            time.sleep(2)
             
-            print("[서버업로드] 배포 요청 완료")
+            try:
+                final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, final_run_button_xpath)))
+                print("[서버업로드] 최종 Run 버튼 클릭")
+                final_run_button.click()
+            except TimeoutException:
+                print("[서버업로드] ⚠️ 최종 Run 버튼을 찾을 수 없습니다. 대체 방법 시도...")
+                try:
+                    # 대체 XPath 시도
+                    final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@id, 'runCustomBuild') or contains(text(), 'Run')]")))
+                    final_run_button.click()
+                    print("[서버업로드] 대체 XPath로 최종 Run 버튼 클릭 성공")
+                except:
+                    raise Exception("최종 Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
+            
+            time.sleep(3)
+            
+            print("[서버업로드] ✅ 배포 요청 완료")
             try:
                 export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":update_done:")
             except:
                 print("export_upload_result 오류")
                 
         except TimeoutException as e:
-            print(f"[서버업로드] 타임아웃 오류: {e}")
+            error_msg = f"[서버업로드] ❌ 타임아웃 오류: {e}"
+            print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":timeout:")
             except:
                 print("export_upload_result 오류")
-            raise Exception(f"서버 업로드 타임아웃: 요소를 찾을 수 없습니다 - {e}")
+            raise Exception(f"서버 업로드 타임아웃: 페이지 로딩이 느리거나 요소를 찾을 수 없습니다. TeamCity 페이지를 확인하세요.")
         except Exception as e:
-            print(f"[서버업로드] 오류: {e}")
+            error_msg = f"[서버업로드] ❌ 오류: {e}"
+            print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":failed:")
             except:
@@ -477,76 +523,174 @@ ChromeDriver 버전: {chromedriver_version}
             driver.implicitly_wait(10)
             print("[update_server_container] 패치 작업 시작...")
             
+            # WebDriverWait 설정
+            wait = WebDriverWait(driver, 20)
+            
             # CONTAINER GAMESERVERS 클릭
-            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
-            driver.implicitly_wait(5)
-            time.sleep(0.5)
+            print("[update_server_container] CONTAINER GAMESERVERS 탭 클릭 대기 중...")
+            container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+            container_tab.click()
+            time.sleep(1)
             
-            # SELECT ALL
-            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]").click()
-            driver.implicitly_wait(5)
+            # SELECT ALL 버튼 클릭
+            print("[update_server_container] SELECT ALL 버튼 클릭 대기 중...")
+            select_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+            select_all_button.click()
+            time.sleep(1)
             
-            # 돋보기 (필터)
-            driver.find_element(By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button').click()
-            time.sleep(0.5)
-            driver.implicitly_wait(5)
+            # 돋보기 (필터) 버튼 클릭
+            print("[update_server_container] 필터 버튼 클릭 대기 중...")
+            filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
+            filter_button.click()
+            time.sleep(1)
             
             # 브랜치 입력
-            time.sleep(1.5)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(branch)
+            print("[update_server_container] 브랜치 입력 필드 대기 중...")
+            branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+            branch_input.send_keys(branch)
             time.sleep(1.5)
             
             # 정확히 일치하는 branch 선택
+            print(f"[update_server_container] 브랜치 '{branch}' 검색 중...")
             for x in range(1, 10):
                 try:
-                    element = driver.find_element(By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')
+                    element = wait.until(EC.presence_of_element_located((By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')))
                     if element.text == branch:
+                        print(f"[update_server_container] 브랜치 '{branch}' 발견, 클릭")
                         element.click()
                         break
                 except Exception as e:
-                    print(f"요소 {x} 찾기 실패: {e}")
+                    print(f"[update_server_container] 요소 {x} 찾기 실패: {e}")
+                    if x == 9:
+                        raise Exception(f"브랜치 '{branch}'를 찾을 수 없습니다")
             
-            time.sleep(0.5)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+            time.sleep(1)
+            print("[update_server_container] Next 버튼 클릭 (브랜치)")
+            next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+            next_button1.click()
             
             # TAG 입력
+            print(f"[update_server_container] TAG 입력: {full_build_name}")
+            tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+            tag_input.send_keys(full_build_name)
             time.sleep(1)
-            #full_build_name
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input').send_keys(full_build_name)
+            
+            print("[update_server_container] TAG 선택")
+            tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
+            tag_option.click()
             time.sleep(1)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span').click()
-            time.sleep(0.5)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+            
+            print("[update_server_container] Next 버튼 클릭 (TAG)")
+            next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+            next_button2.click()
             
             # Build config 체크박스
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]').click()
-            time.sleep(0.5)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]').click()
+            print("[update_server_container] Build config 체크박스 클릭")
+            build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
+            build_config_checkbox.click()
+            time.sleep(1)
             
-            # SELECT 클릭
-            time.sleep(0.5)
-            driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button').click()
+            print("[update_server_container] Next 버튼 클릭 (Build config)")
+            next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+            next_button3.click()
             
-            # APPLY 클릭
-            time.sleep(0.5)
-            driver.find_element(By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]').click()
+            # SELECT 버튼 클릭
+            print("[update_server_container] SELECT 버튼 클릭")
+            select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
+            select_button.click()
+            time.sleep(1)
+            
+            # APPLY 버튼 클릭
+            print("[update_server_container] APPLY 버튼 클릭")
+            apply_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
+            apply_button.click()
             
             if not is_debug:
                 # 팝업 OK 버튼
-                time.sleep(0.5)
-                driver.find_element(By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
+                print("[update_server_container] 확인 팝업 OK 버튼 클릭")
+                ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                ok_button.click()
                 try:
                     export_upload_result(aws_link, full_build_name, "aws_apply", ":update_done:")
                 except:
                     print("export_upload_result 오류")
+                    
+            print("[update_server_container] ✅ 서버 패치 완료")
+            
+        except TimeoutException as e:
+            error_msg = f"[update_server_container] ❌ 타임아웃: 요소를 찾을 수 없습니다 - {e}"
+            print(error_msg)
+            try:
+                export_upload_result(aws_link, full_build_name, "aws_apply", ":timeout:")
+            except:
+                print("export_upload_result 오류")
+            raise Exception(f"서버 패치 타임아웃: 요소를 찾을 수 없습니다")
         except Exception as e:
-            print(f"패치 오류: {e}")
+            error_msg = f"[update_server_container] ❌ 패치 오류: {e}"
+            print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "aws_apply", ":failed:")
             except:
                 print("export_upload_result 오류")
             # 예외를 다시 발생시켜서 호출자에게 실패를 알림
             raise
+    
+    @staticmethod
+    def delete_server_container(driver, aws_link: str):
+        """서버 컨테이너 삭제 (모두 선택)"""
+        try:
+            print(f"[delete_server_container] 시작")
+            print(f"[delete_server_container] AWS URL: {aws_link}")
+            
+            if driver is None:
+                print("[delete_server_container] 드라이버 시작 중...")
+                driver = AWSManager.start_driver()
+                driver.implicitly_wait(10)
+                
+                print(f"[delete_server_container] AWS 페이지 이동: {aws_link}")
+                driver.get(aws_link)
+                driver.implicitly_wait(10)
+                
+                try:
+                    print("[delete_server_container] 로그인 확인 중...")
+                    driver.find_element(By.XPATH, '//*[@id="social-oidc"]').click()
+                    print("[delete_server_container] 로그인 버튼 클릭")
+                except:
+                    print('[delete_server_container] 로그인 스킵 (이미 로그인됨)')
+            
+            driver.implicitly_wait(10)
+            print("[delete_server_container] 삭제 작업 시작...")
+            
+            # CONTAINER GAMESERVERS 클릭
+            print("[delete_server_container] CONTAINER GAMESERVERS 탭 클릭")
+            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
+            driver.implicitly_wait(5)
+            time.sleep(0.5)
+            
+            # Select all 버튼 클릭
+            print("[delete_server_container] Select All 버튼 클릭")
+            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]").click()
+            time.sleep(0.5)
+            driver.implicitly_wait(5)
+            
+            # Delete Servers 버튼 클릭
+            print("[delete_server_container] Delete Servers 버튼 클릭")
+            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[4]").click()
+            time.sleep(0.5)
+            driver.implicitly_wait(5)
+
+            # YES 버튼 클릭
+            print("[delete_server_container] YES 버튼 클릭")
+            driver.find_element(By.XPATH, "/html/body/div[3]/div[1]/div[2]/div/button[1]").click()
+            time.sleep(0.5)
+            driver.implicitly_wait(5)
+            
+            print("[delete_server_container] ✅ 서버 삭제 작업 완료")
+            
+        except Exception as e:
+            error_msg = f"[delete_server_container] ❌ 서버 삭제 오류: {e}"
+            print(error_msg)
+            raise Exception(error_msg)
     
     @staticmethod
     def run_teamcity_build(driver, url_link: str = 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects',

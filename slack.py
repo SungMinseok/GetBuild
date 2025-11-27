@@ -405,6 +405,74 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
         return None
 
 
+def send_message_with_bot_token(bot_token: str, channel_id: str, 
+                                message: str, title: Optional[str] = None) -> bool:
+    """
+    Bot Token과 채널 ID를 사용하여 메시지 전송 (단독 알림용)
+    
+    Args:
+        bot_token: Slack Bot Token
+        channel_id: 채널 ID
+        message: 전송할 메시지
+        title: 메시지 제목 (선택사항)
+    
+    Returns:
+        전송 성공 여부
+    """
+    try:
+        client = WebClient(token=bot_token)
+        
+        # 메시지 구성
+        full_message = message
+        if title:
+            full_message = f"*{title}*\n{message}"
+        
+        response = client.chat_postMessage(
+            channel=channel_id,
+            text=full_message
+        )
+        
+        if response['ok']:
+            print(f"[Slack] ✅ 메시지 전송 성공: {response['ts']}")
+            return True
+        else:
+            print(f"[Slack] ❌ 메시지 전송 실패: {response.get('error')}")
+            return False
+            
+    except SlackApiError as e:
+        error_type = e.response.get('error', 'unknown')
+        
+        if error_type == 'missing_scope':
+            needed_scopes = e.response.get('needed', 'chat:write')
+            print(f"[Slack] ❌ 권한 오류: Bot Token에 메시지 전송 권한이 없습니다.")
+            print(f"[Slack] 필요한 권한: {needed_scopes}")
+            print(f"[Slack] 해결 방법:")
+            print(f"  1. https://api.slack.com/apps 접속")
+            print(f"  2. 해당 앱 선택 → 'OAuth & Permissions' 메뉴")
+            print(f"  3. 'Scopes' 섹션에서 다음 권한 추가:")
+            print(f"     - chat:write (메시지 전송)")
+            print(f"  4. 'Reinstall to Workspace' 클릭")
+            print(f"  5. 새로운 Bot Token 복사하여 다시 설정")
+        elif error_type == 'channel_not_found':
+            print(f"[Slack] ❌ 채널 오류: 채널 ID '{channel_id}'를 찾을 수 없습니다.")
+            print(f"[Slack] 해결 방법: 채널 ID가 정확한지 확인하세요.")
+        elif error_type == 'not_in_channel':
+            print(f"[Slack] ❌ 채널 접근 오류: 봇이 채널에 추가되지 않았습니다.")
+            print(f"[Slack] 해결 방법: 채널에서 '/invite @앱이름' 명령 실행")
+        elif error_type == 'invalid_auth':
+            print(f"[Slack] ❌ 인증 오류: Bot Token이 유효하지 않습니다.")
+            print(f"[Slack] 해결 방법: Bot Token을 다시 확인하세요. (xoxb-로 시작)")
+        else:
+            print(f"[Slack] ❌ 메시지 전송 오류: {error_type}")
+            if 'error' in e.response:
+                print(f"[Slack] 상세 정보: {e.response}")
+        
+        return False
+    except Exception as e:
+        print(f"[Slack] ❌ 메시지 전송 예외: {e}")
+        return False
+
+
 def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str, 
                      message: str, title: Optional[str] = None) -> bool:
     """
@@ -482,19 +550,21 @@ def send_schedule_notification(webhook_url: str, schedule_name: str,
                                notification_type: str = 'standalone',
                                bot_token: Optional[str] = None,
                                channel_id: Optional[str] = None,
-                               thread_keyword: Optional[str] = None) -> bool:
+                               thread_keyword: Optional[str] = None,
+                               first_message: Optional[str] = None) -> bool:
     """
     스케줄 실행 알림 전송 (단독 알림 또는 스레드 댓글)
     
     Args:
-        webhook_url: Slack Webhook URL (단독 알림용)
+        webhook_url: Slack Webhook URL (더 이상 사용 안 함, 호환성용)
         schedule_name: 스케줄 이름
         status: 상태 (시작, 완료, 실패)
         details: 추가 상세 정보
         notification_type: 알림 타입 ('standalone' 또는 'thread')
-        bot_token: Slack Bot Token (스레드 댓글용)
-        channel_id: 채널 ID (스레드 댓글용)
+        bot_token: Slack Bot Token (필수)
+        channel_id: 채널 ID (필수)
         thread_keyword: 스레드 검색 키워드 (스레드 댓글용)
+        first_message: 알림에 포함될 첫 메시지 (날짜 키워드 포함 가능)
     
     Returns:
         전송 성공 여부
@@ -511,15 +581,46 @@ def send_schedule_notification(webhook_url: str, schedule_name: str,
     
     color = color_map.get(status, '#808080')  # 기본: 회색
     
+    # 첫 메시지가 있으면 날짜 키워드 변환
+    converted_first_message = ""
+    if first_message:
+        from datetime import datetime
+        converted_first_message = first_message
+        now = datetime.now()
+        
+        # yymmdd -> 251117
+        if 'yymmdd' in converted_first_message:
+            converted_first_message = converted_first_message.replace('yymmdd', now.strftime('%y%m%d'))
+        
+        # yyyymmdd -> 20251117
+        if 'yyyymmdd' in converted_first_message:
+            converted_first_message = converted_first_message.replace('yyyymmdd', now.strftime('%Y%m%d'))
+        
+        # mmdd -> 1117
+        if 'mmdd' in converted_first_message:
+            converted_first_message = converted_first_message.replace('mmdd', now.strftime('%m%d'))
+    
     # 메시지 구성
-    title = f"🔔 스케줄 알림: {schedule_name}"
-    message = f"상태: {status}"
+    title = ""
+    message = ""
+    
+    # 첫 메시지가 있으면 맨 앞에 추가
+    if converted_first_message:
+        message = converted_first_message
     
     if details:
-        message += f"\n{details}"
+        if message:
+            message += f"\n{details}"
+        else:
+            message = details
+    
+    # Bot Token과 채널 ID가 없으면 실패
+    if not bot_token or not channel_id:
+        print(f"[Slack] ❌ Bot Token 또는 채널 ID가 없습니다.")
+        return False
     
     # 알림 타입에 따라 전송 방식 선택
-    if notification_type == 'thread' and bot_token and channel_id and thread_keyword:
+    if notification_type == 'thread' and thread_keyword:
         # 스레드 댓글 알림
         print(f"[Slack] 스레드 댓글 알림 시도: 키워드='{thread_keyword}'")
         
@@ -532,10 +633,10 @@ def send_schedule_notification(webhook_url: str, schedule_name: str,
         else:
             # 스레드를 찾지 못한 경우 단독 알림으로 폴백
             print(f"[Slack] 스레드를 찾지 못해 단독 알림으로 전송합니다.")
-            return send_slack_webhook(webhook_url, message, title=title, color=color)
+            return send_message_with_bot_token(bot_token, channel_id, message, title)
     else:
-        # 단독 알림 (기본)
-        return send_slack_webhook(webhook_url, message, title=title, color=color)
+        # 단독 알림 (Bot Token과 채널 ID 사용)
+        return send_message_with_bot_token(bot_token, channel_id, message, title)
 
 
 if __name__ == "__main__":

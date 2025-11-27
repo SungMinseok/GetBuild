@@ -5,6 +5,56 @@ import traceback
 import sys
 import io
 import contextlib
+import re
+
+
+def simplify_error_message(error_msg: str, max_length: int = 200) -> str:
+    """
+    에러 메시지를 간결하게 만듭니다.
+    
+    Args:
+        error_msg: 원본 에러 메시지
+        max_length: 최대 메시지 길이
+    
+    Returns:
+        간결한 에러 메시지
+    """
+    # Selenium NoSuchElementException 패턴 감지
+    if "no such element" in error_msg.lower() or "Unable to locate element" in error_msg:
+        # XPath 또는 selector 정보 추출
+        selector_match = re.search(r'"selector":"([^"]+)"', error_msg)
+        method_match = re.search(r'"method":"([^"]+)"', error_msg)
+        
+        if selector_match and method_match:
+            method = method_match.group(1)
+            selector = selector_match.group(1)
+            # selector가 너무 길면 축약
+            if len(selector) > 80:
+                selector = selector[:77] + "..."
+            return f"요소를 찾을 수 없음 ({method}: {selector})"
+        else:
+            return "요소를 찾을 수 없음"
+    
+    # Stacktrace 제거
+    if "Stacktrace:" in error_msg:
+        error_msg = error_msg.split("Stacktrace:")[0].strip()
+    
+    # "For documentation on this error" 이후 내용 제거
+    if "For documentation on this error" in error_msg:
+        error_msg = error_msg.split("For documentation on this error")[0].strip()
+    
+    # Session info 제거
+    if "(Session info:" in error_msg:
+        error_msg = re.sub(r'\(Session info:[^)]+\)', '', error_msg).strip()
+    
+    # 연속된 공백/줄바꿈 정리
+    error_msg = re.sub(r'\s+', ' ', error_msg).strip()
+    
+    # 최대 길이로 자르기
+    if len(error_msg) > max_length:
+        error_msg = error_msg[:max_length] + "..."
+    
+    return error_msg
 
 
 class WorkerThread(QThread):
@@ -46,10 +96,14 @@ class WorkerThread(QThread):
                 self.finished.emit(True, str(result) if result else "완료")
         
         except Exception as e:
-            error_msg = f"{type(e).__name__}: {str(e)}"
+            # 전체 에러 메시지 (로그용)
+            full_error_msg = f"{type(e).__name__}: {str(e)}"
             error_trace = traceback.format_exc()
             self.log.emit(f"[작업 오류]\n{error_trace}")
-            self.finished.emit(False, error_msg)
+            
+            # 간결한 에러 메시지 (UI용)
+            simplified_msg = simplify_error_message(full_error_msg)
+            self.finished.emit(False, simplified_msg)
     
     def cancel(self):
         """작업 취소 요청"""
@@ -175,11 +229,15 @@ class ScheduleWorkerThread(WorkerThread):
                 self.finished.emit(True, str(result) if result else "완료")
         
         except Exception as e:
-            error_msg = f"{type(e).__name__}: {str(e)}"
+            # 전체 에러 메시지 (로그용)
+            full_error_msg = f"{type(e).__name__}: {str(e)}"
             error_trace = traceback.format_exc()
             self.log.emit(f"[스케줄 오류] {self.schedule.get('name', 'Unknown')}\n{error_trace}")
-            self.schedule_finished.emit(self.schedule, False, error_msg)
-            self.finished.emit(False, error_msg)
+            
+            # 간결한 에러 메시지 (UI 및 슬랙 알림용)
+            simplified_msg = simplify_error_message(full_error_msg)
+            self.schedule_finished.emit(self.schedule, False, simplified_msg)
+            self.finished.emit(False, simplified_msg)
         finally:
             # stdout 복원 확인
             if self.capture_stdout and sys.stdout != sys.__stdout__:

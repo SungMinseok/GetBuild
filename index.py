@@ -16,6 +16,7 @@ import re
 # Core 모듈 import
 from core import ConfigManager, ScheduleManager, BuildOperations, ScheduleWorkerThread
 from core.aws_manager import AWSManager
+from core.worker_thread import simplify_error_message
 
 # UI 모듈 import
 from ui import ScheduleDialog, ScheduleItemWidget, SettingsDialog
@@ -600,8 +601,8 @@ class QuickBuildApp(QMainWindow):
         self.update_status_summary()
         
         # 슬랙 알림 전송 (시작)
-        self.send_slack_notification_if_enabled(schedule, '시작', 
-                                               f"옵션: {option}\n빌드: {buildname}")
+        # self.send_slack_notification_if_enabled(schedule, '시작', 
+        #                                        f"옵션: {option}\n빌드: {buildname}")
     
     def find_latest_build(self, src_folder: str, buildname: str) -> str:
         """
@@ -801,7 +802,7 @@ Branch: {branch}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 print(test_log)
-                return "테스트 로그 출력 완료"
+                return ""
             
             elif option == "클라복사":
                 full_buildname = get_full_buildname(buildname)
@@ -868,6 +869,21 @@ Branch: {branch}
                 )
                 print("[서버패치] AWS Manager 완료")
                 return f"서버패치 완료: {awsurl} ({full_buildname})"
+            
+            elif option == "서버삭제":
+                # AWS 서버 컨테이너 삭제
+                if not awsurl:
+                    raise Exception("AWS URL이 설정되지 않았습니다.")
+                
+                print(f"[서버삭제] AWS URL: {awsurl}")
+                
+                print("[서버삭제] AWS Manager 실행 중...")
+                AWSManager.delete_server_container(
+                    driver=None,
+                    aws_link=awsurl
+                )
+                print("[서버삭제] AWS Manager 완료")
+                return f"서버삭제 완료: {awsurl}"
             
             elif option == "서버업로드":
                 # if not awsurl:
@@ -955,7 +971,9 @@ Branch: {branch}
                 return f"{option} 실행 완료 (미구현)"
         
         except Exception as e:
-            raise Exception(f"{option} 실행 오류: {str(e)}")
+            # 에러 메시지를 간결하게 만들어서 재발생
+            simplified_msg = simplify_error_message(str(e))
+            raise Exception(f"{option} 실행 오류: {simplified_msg}")
     
     def on_schedule_finished(self, schedule: dict, success: bool, message: str):
         """스케줄 실행 완료"""
@@ -1009,9 +1027,10 @@ Branch: {branch}
         try:
             # 슬랙 알림이 활성화되어 있는지 확인
             slack_enabled = schedule.get('slack_enabled', False)
-            slack_webhook = schedule.get('slack_webhook', '').strip()
+            bot_token = schedule.get('bot_token', '').strip()
+            channel_id = schedule.get('channel_id', '').strip()
             
-            if not slack_enabled or not slack_webhook:
+            if not slack_enabled or not bot_token or not channel_id:
                 return
             
             # 스케줄 이름
@@ -1019,23 +1038,32 @@ Branch: {branch}
             
             # 알림 타입 및 추가 정보
             notification_type = schedule.get('notification_type', 'standalone')
-            bot_token = schedule.get('bot_token', '').strip()
-            channel_id = schedule.get('channel_id', '').strip()
             thread_keyword = schedule.get('thread_keyword', '').strip()
+            first_message = schedule.get('first_message', '').strip()
+            
+            # 테스트(로그) 옵션 처리
+            option = schedule.get('option', '')
+            if option == '테스트(로그)':
+                # first_message가 있으면 그것만 전송, 없으면 알림 안 보냄
+                if first_message:
+                    details = None  # 상태값(완료/실패) 제거
+                else:
+                    return  # 알림 전송 안 함
             
             # 알림 전송
-            if notification_type == 'thread' and bot_token and channel_id and thread_keyword:
+            if notification_type == 'thread' and thread_keyword:
                 self.log(f"[슬랙 알림] 스레드 댓글 모드: '{thread_keyword}' 검색 중...")
             
             send_schedule_notification(
-                webhook_url=slack_webhook,
+                webhook_url='',  # 더 이상 사용 안 함 (호환성용)
                 schedule_name=schedule_name,
                 status=status,
                 details=details,
                 notification_type=notification_type,
-                bot_token=bot_token if notification_type == 'thread' else None,
-                channel_id=channel_id if notification_type == 'thread' else None,
-                thread_keyword=thread_keyword if notification_type == 'thread' else None
+                bot_token=bot_token,
+                channel_id=channel_id,
+                thread_keyword=thread_keyword if notification_type == 'thread' else None,
+                first_message=first_message if first_message else None
             )
             
         except Exception as e:

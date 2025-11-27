@@ -6,6 +6,7 @@ from PyQt5.QtCore import QTime, Qt
 from typing import Dict, Any, Optional, List
 import json
 import os
+from datetime import datetime
 
 
 class ScheduleDialog(QDialog):
@@ -277,7 +278,7 @@ class ScheduleDialog(QDialog):
         notification_type_layout.addStretch()
         layout.addRow("알림 타입:", notification_type_layout)
         
-        # Webhook URL 선택/입력 (단독 알림용)
+        # Webhook URL 선택/입력 (더 이상 사용 안 함 - 호환성을 위해 숨김 처리)
         webhook_layout = QHBoxLayout()
         
         # 드롭다운 (hook.json에서 로드)
@@ -285,6 +286,7 @@ class ScheduleDialog(QDialog):
         self.webhook_combo.setEditable(True)
         self.webhook_combo.setPlaceholderText("Webhook URL을 선택하거나 직접 입력하세요")
         self.webhook_combo.setEnabled(False)
+        self.webhook_combo.setVisible(False)  # 숨김 처리
         self.load_webhook_urls()
         webhook_layout.addWidget(self.webhook_combo)
         
@@ -293,18 +295,22 @@ class ScheduleDialog(QDialog):
         refresh_webhook_btn.setFixedWidth(40)
         refresh_webhook_btn.setToolTip("hook.json에서 Webhook URL 목록 새로고침")
         refresh_webhook_btn.clicked.connect(self.load_webhook_urls)
+        refresh_webhook_btn.setVisible(False)  # 숨김 처리
         webhook_layout.addWidget(refresh_webhook_btn)
         
-        layout.addRow("Webhook URL:", webhook_layout)
+        # Webhook URL 라벨도 숨김 처리를 위해 따로 저장
+        self.webhook_label = QLabel("Webhook URL:")
+        self.webhook_label.setVisible(False)
+        # layout.addRow은 아래에서 처리
         
-        # Bot Token 입력 (스레드 댓글용)
+        # Bot Token 입력 (단독 알림 및 스레드 댓글 모두 사용)
         self.bot_token_edit = QLineEdit()
-        self.bot_token_edit.setPlaceholderText("xoxb-xxxxx... (스레드 댓글 알림 시 필요)")
+        self.bot_token_edit.setPlaceholderText("xoxb-xxxxx... (필수)")
         self.bot_token_edit.setEnabled(False)
-        self.bot_token_edit.setEchoMode(QLineEdit.Password)
+        #self.bot_token_edit.setEchoMode(QLineEdit.Password)
         layout.addRow("Bot Token:", self.bot_token_edit)
         
-        # 채널 ID 입력 (스레드 댓글용)
+        # 채널 ID 입력 (단독 알림 및 스레드 댓글 모두 사용)
         self.channel_id_edit = QLineEdit()
         self.channel_id_edit.setPlaceholderText("C0XXXXXXX (공개채널) 또는 G0XXXXXXX (비공개)")
         self.channel_id_edit.setEnabled(False)
@@ -320,11 +326,28 @@ class ScheduleDialog(QDialog):
         )
         layout.addRow("채널 ID:", self.channel_id_edit)
         
-        # 스레드 검색 키워드 입력 (스레드 댓글용)
+        # 스레드 검색 키워드 입력 (스레드 댓글용만 사용)
         self.thread_keyword_edit = QLineEdit()
         self.thread_keyword_edit.setPlaceholderText("예: 251110 빌드 세팅 스레드")
         self.thread_keyword_edit.setEnabled(False)
+        self.thread_keyword_edit.setToolTip("스레드 댓글 알림 시에만 사용됩니다.")
         layout.addRow("스레드 키워드:", self.thread_keyword_edit)
+        
+        # 첫 메시지 입력 (알림에 포함될 메시지)
+        first_message_layout = QVBoxLayout()
+        self.first_message_edit = QLineEdit()
+        self.first_message_edit.setPlaceholderText("알림에 포함될 메시지 (예: yymmdd 입력 시 현재 날짜로 변환)")
+        self.first_message_edit.setEnabled(False)
+        self.first_message_edit.textChanged.connect(self.on_first_message_changed)
+        first_message_layout.addWidget(self.first_message_edit)
+        
+        # 미리보기 레이블
+        self.first_message_preview = QLabel("")
+        self.first_message_preview.setStyleSheet("color: gray; font-size: 10pt; padding-left: 5px;")
+        self.first_message_preview.setWordWrap(True)
+        first_message_layout.addWidget(self.first_message_preview)
+        
+        layout.addRow("첫 메시지:", first_message_layout)
         
         group.setLayout(layout)
         return group
@@ -372,23 +395,68 @@ class ScheduleDialog(QDialog):
             self.bot_token_edit.setEnabled(False)
             self.channel_id_edit.setEnabled(False)
             self.thread_keyword_edit.setEnabled(False)
+            self.first_message_edit.setEnabled(False)
     
     def on_notification_type_changed(self):
         """알림 타입 변경 (단독/스레드)"""
         is_standalone = self.notification_standalone_radio.isChecked()
         
         if is_standalone:
-            # 단독 알림: Webhook URL만 활성화
-            self.webhook_combo.setEnabled(True)
-            self.bot_token_edit.setEnabled(False)
-            self.channel_id_edit.setEnabled(False)
+            # 단독 알림: Webhook URL 대신 Bot Token과 채널 ID 사용
+            self.webhook_combo.setEnabled(False)
+            self.bot_token_edit.setEnabled(True)
+            self.channel_id_edit.setEnabled(True)
             self.thread_keyword_edit.setEnabled(False)
+            self.first_message_edit.setEnabled(True)
         else:
             # 스레드 댓글: 모든 필드 활성화
-            self.webhook_combo.setEnabled(True)  # 폴백용으로 항상 필요
+            self.webhook_combo.setEnabled(False)  # bot token 사용으로 변경됨
             self.bot_token_edit.setEnabled(True)
             self.channel_id_edit.setEnabled(True)
             self.thread_keyword_edit.setEnabled(True)
+            self.first_message_edit.setEnabled(True)
+    
+    def convert_date_keywords(self, text: str) -> str:
+        """
+        메시지 내의 날짜 키워드를 실제 날짜로 변환
+        
+        Args:
+            text: 변환할 텍스트 (예: "yymmdd 빌드 테스트")
+        
+        Returns:
+            변환된 텍스트 (예: "251117 빌드 테스트")
+        """
+        if not text:
+            return text
+        
+        now = datetime.now()
+        
+        # yymmdd -> 251117 (2자리 연도 + 월 + 일)
+        if 'yymmdd' in text:
+            date_str = now.strftime('%y%m%d')
+            text = text.replace('yymmdd', date_str)
+        
+        # yyyymmdd -> 20251117 (4자리 연도 + 월 + 일)
+        if 'yyyymmdd' in text:
+            date_str = now.strftime('%Y%m%d')
+            text = text.replace('yyyymmdd', date_str)
+        
+        # mmdd -> 1117 (월 + 일)
+        if 'mmdd' in text:
+            date_str = now.strftime('%m%d')
+            text = text.replace('mmdd', date_str)
+        
+        return text
+    
+    def on_first_message_changed(self):
+        """첫 메시지 입력 시 미리보기 업데이트"""
+        original_text = self.first_message_edit.text()
+        converted_text = self.convert_date_keywords(original_text)
+        
+        if original_text and original_text != converted_text:
+            self.first_message_preview.setText(f"→ {converted_text}")
+        else:
+            self.first_message_preview.setText("")
     
     def create_buttons(self) -> QHBoxLayout:
         """버튼 생성"""
@@ -414,8 +482,108 @@ class ScheduleDialog(QDialog):
             checkbox.setEnabled(checked)
     
     def on_option_changed(self, option: str):
-        """실행 옵션 변경 시 (필요시 추가 처리)"""
-        pass
+        """
+        실행 옵션 변경 시 필요하지 않은 필드 비활성화
+        단, 비활성화하되 값이 있으면 저장됨 (get_schedule_data에서 처리)
+        """
+        # 각 옵션별 필요한 필드 정의
+        # True: 필요, False: 불필요
+        field_requirements = {
+            '클라복사': {
+                'src_path': True,
+                'dest_path': True,
+                'buildname': True,
+                'awsurl': False,
+                'branch': False
+            },
+            '전체복사': {
+                'src_path': True,
+                'dest_path': True,
+                'buildname': True,
+                'awsurl': False,
+                'branch': False
+            },
+            '서버복사': {
+                'src_path': True,
+                'dest_path': True,
+                'buildname': True,
+                'awsurl': False,
+                'branch': False
+            },
+            '서버업로드': {
+                'src_path': True,
+                'dest_path': False,
+                'buildname': True,
+                'awsurl': False,
+                'branch': True
+            },
+            '서버업로드및패치': {
+                'src_path': True,
+                'dest_path': False,
+                'buildname': True,
+                'awsurl': True,
+                'branch': True
+            },
+            '서버패치': {
+                'src_path': True,
+                'dest_path': False,
+                'buildname': True,
+                'awsurl': True,
+                'branch': True
+            },
+            '서버삭제': {
+                'src_path': False,
+                'dest_path': False,
+                'buildname': False,
+                'awsurl': True,
+                'branch': False
+            },
+            '빌드굽기': {
+                'src_path': False,
+                'dest_path': False,
+                'buildname': False,
+                'awsurl': False,
+                'branch': True
+            },
+            '테스트(로그)': {
+                'src_path': False,
+                'dest_path': False,
+                'buildname': False,
+                'awsurl': False,
+                'branch': False
+            },
+            'TEST': {
+                'src_path': False,
+                'dest_path': False,
+                'buildname': False,
+                'awsurl': False,
+                'branch': False
+            }
+        }
+        
+        # 현재 옵션의 필드 요구사항 가져오기
+        requirements = field_requirements.get(option, {
+            'src_path': True,
+            'dest_path': True,
+            'buildname': True,
+            'awsurl': True,
+            'branch': True
+        })
+        
+        # 필드 활성화/비활성화 (값은 유지)
+        self.src_path_edit.setEnabled(requirements.get('src_path', True))
+        self.dest_path_edit.setEnabled(requirements.get('dest_path', True))
+        self.awsurl_edit.setEnabled(requirements.get('awsurl', True))
+        self.branch_edit.setEnabled(requirements.get('branch', True))
+        
+        # buildname 관련 필드들
+        buildname_required = requirements.get('buildname', True)
+        self.prefix_edit.setEnabled(buildname_required)
+        # buildname_combo는 빌드 모드에 따라 제어되므로 여기서는 건드리지 않음
+        # 단, 빌드 모드 라디오 버튼은 비활성화
+        self.build_mode_latest.setEnabled(buildname_required)
+        self.build_mode_fixed.setEnabled(buildname_required)
+        self.refresh_builds_btn.setEnabled(buildname_required)
     
     def on_build_mode_changed(self):
         """빌드 모드 변경 (최신 / 지정)"""
@@ -570,6 +738,13 @@ class ScheduleDialog(QDialog):
         self.bot_token_edit.setText(bot_token)
         self.channel_id_edit.setText(channel_id)
         self.thread_keyword_edit.setText(thread_keyword)
+        
+        # 첫 메시지
+        first_message = self.schedule.get('first_message', '')
+        self.first_message_edit.setText(first_message)
+        # 미리보기 업데이트
+        if first_message:
+            self.on_first_message_changed()
     
     def on_save(self):
         """저장 버튼 클릭"""
@@ -587,7 +762,7 @@ class ScheduleDialog(QDialog):
         self.accept()
     
     def get_schedule_data(self) -> Dict[str, Any]:
-        """입력된 스케줄 데이터 반환"""
+        """입력된 스케줄 데이터 반환 (비활성화된 필드도 값이 있으면 저장)"""
         # 반복 유형
         if self.once_radio.isChecked():
             repeat_type = 'once'
@@ -609,30 +784,18 @@ class ScheduleDialog(QDialog):
         # 빌드 모드
         build_mode = 'fixed' if self.build_mode_fixed.isChecked() else 'latest'
         
-        # 슬랙 알림 설정
+        # 슬랙 알림 설정 (비활성화 상태여도 값이 있으면 저장)
         slack_enabled = self.slack_enabled_checkbox.isChecked()
-        slack_webhook = ''
-        notification_type = 'standalone'
-        bot_token = ''
-        channel_id = ''
-        thread_keyword = ''
+        notification_type = 'thread' if self.notification_thread_radio.isChecked() else 'standalone'
         
-        if slack_enabled:
-            # 드롭다운에서 선택된 URL 또는 직접 입력된 URL
-            current_data = self.webhook_combo.currentData()
-            if current_data:
-                slack_webhook = current_data
-            else:
-                slack_webhook = self.webhook_combo.currentText().strip()
-            
-            # 알림 타입
-            notification_type = 'thread' if self.notification_thread_radio.isChecked() else 'standalone'
-            
-            # 스레드 댓글 알림 설정
-            if notification_type == 'thread':
-                bot_token = self.bot_token_edit.text().strip()
-                channel_id = self.channel_id_edit.text().strip()
-                thread_keyword = self.thread_keyword_edit.text().strip()
+        # 모든 필드의 값을 가져옴 (활성화 여부와 무관)
+        bot_token = self.bot_token_edit.text().strip()
+        channel_id = self.channel_id_edit.text().strip()
+        thread_keyword = self.thread_keyword_edit.text().strip()
+        first_message = self.first_message_edit.text().strip()
+        
+        # webhook은 더 이상 사용하지 않지만 호환성을 위해 빈 값 저장
+        slack_webhook = ''
         
         data = {
             'name': name,
@@ -649,11 +812,12 @@ class ScheduleDialog(QDialog):
             'repeat_days': repeat_days,
             'enabled': self.enabled_checkbox.isChecked(),
             'slack_enabled': slack_enabled,
-            'slack_webhook': slack_webhook,
+            'slack_webhook': slack_webhook,  # 호환성
             'notification_type': notification_type,
             'bot_token': bot_token,
             'channel_id': channel_id,
-            'thread_keyword': thread_keyword
+            'thread_keyword': thread_keyword,
+            'first_message': first_message
         }
         
         # 편집 모드면 ID 유지

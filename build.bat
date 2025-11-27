@@ -15,18 +15,18 @@ echo %VERSION_STR% > version.txt
 echo [INFO] Generated version.txt with version: %VERSION_STR%
 
 REM === [2] 가상환경 활성화 ===
-call C:\myvenv\getbuild\Scripts\activate.bat
+call .venv\Scripts\activate.bat
 
 REM === [3] PyInstaller 실행 ===
 start /wait pyinstaller --upx-dir C:\upx-4.2.4-win64 -F -w -i ico.ico --name QuickBuild index.py
 
-REM === [4] 기존 zip 삭제 ===
-if exist QuickBuild.zip del QuickBuild.zip
+@REM REM === [4] 기존 zip 삭제 ===
+@REM if exist QuickBuild.zip del QuickBuild.zip
 
-REM === [5] zip 생성 ===
-echo [INFO] Creating new QuickBuild.zip file...
+@REM REM === [5] zip 생성 ===
+@REM echo [INFO] Creating new QuickBuild.zip file...
 
-powershell Compress-Archive -Path dist\QuickBuild.exe, dist\QuickBuild_updater.exe, config.json, version.txt, ico.ico, qss -DestinationPath QuickBuild.zip
+@REM powershell Compress-Archive -Path dist\QuickBuild.exe, dist\QuickBuild_updater.exe, config.json, version.txt, ico.ico, qss -DestinationPath QuickBuild.zip
 
 echo [INFO] Done. Final version: %VERSION_STR%
 pause
