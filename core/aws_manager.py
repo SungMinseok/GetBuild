@@ -253,6 +253,12 @@ class AWSManager:
         
         print("[start_driver] Chrome 드라이버 시작...")
         
+        # 좀비 ChromeDriver 프로세스 정리 (타임아웃 방지)
+        killed = AWSManager.kill_all_chromedrivers()
+        if killed > 0:
+            print(f"[start_driver] 기존 ChromeDriver 프로세스 {killed}개 정리 완료")
+            time.sleep(2)  # 프로세스 종료 대기
+        
         # 사용자 데이터 디렉터리 확인 및 생성
         if not os.path.exists(chrome_user_data_dir):
             os.makedirs(chrome_user_data_dir)
@@ -310,23 +316,32 @@ ChromeDriver 버전: {chromedriver_version}
         try:
             # 이미 실행 중인지 확인
             print("[start_driver] 기존 Chrome 디버깅 세션 확인 중...")
-            response = requests.get(chrome_debugging_address, timeout=2)
+            response = requests.get(chrome_debugging_address, timeout=5)
             if response.status_code == 200:
                 print("[start_driver] ✅ 기존 Chrome 세션 발견, 연결 중... (로그인 캐시 유지)")
                 chrome_options = Options()
                 chrome_options.debugger_address = "127.0.0.1:9222"
                 
-                service = Service(executable_path=chromedriver_path)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-                
-                # 새 탭 열기
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                print("[start_driver] 기존 Chrome 세션 연결 완료 (로그인 상태 유지됨)")
-                return driver
+                try:
+                    service = Service(executable_path=chromedriver_path)
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                    
+                    # 새 탭 열기
+                    driver.execute_script("window.open('');")
+                    new_tab = driver.window_handles[-1]
+                    driver.switch_to.window(new_tab)
+                    print("[start_driver] 기존 Chrome 세션 연결 완료 (로그인 상태 유지됨)")
+                    return driver
+                except Exception as e:
+                    # 기존 세션 연결 실패 시 Chrome 종료 후 재시작
+                    print(f"[start_driver] ⚠️ 기존 Chrome 세션 연결 실패: {e}")
+                    print("[start_driver] Chrome 프로세스 종료 후 새로 시작합니다...")
+                    os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                    time.sleep(3)
         except requests.ConnectionError:
             print("[start_driver] 기존 Chrome 세션 없음, 새로 시작...")
+        except requests.Timeout:
+            print("[start_driver] ⚠️ Chrome 디버깅 포트 응답 없음 (타임아웃), 새로 시작...")
         except Exception as e:
             print(f"[start_driver] 기존 Chrome 연결 오류: {e}")
         
@@ -363,11 +378,24 @@ ChromeDriver 버전: {chromedriver_version}
         
         try:
             service = Service(executable_path=chromedriver_path)
+            print("[start_driver] WebDriver 연결 시도 중... (최대 180초 대기)")
+            
+            # Selenium 타임아웃 설정 증가
             driver = webdriver.Chrome(service=service, options=chrome_options)
-            print("[start_driver] WebDriver 연결 성공")
+            print("[start_driver] ✅ WebDriver 연결 성공")
         except Exception as e:
-            print(f"[start_driver] WebDriver 연결 실패: {e}")
-            raise
+            error_msg = str(e)
+            print(f"[start_driver] ❌ WebDriver 연결 실패: {error_msg}")
+            
+            # 타임아웃인 경우 추가 정보 제공
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                print("[start_driver] 💡 해결 방법:")
+                print("  1. Chrome 프로세스를 수동으로 종료하세요 (작업 관리자)")
+                print("  2. ChromeDriver 프로세스를 종료하세요")
+                print("  3. C:\\ChromeTEMP 폴더를 삭제하고 재시도하세요")
+                print("  4. 방화벽/백신이 localhost 통신을 차단하는지 확인하세요")
+            
+            raise Exception(f"ChromeDriver 연결 실패 (타임아웃): {error_msg}")
         
         # 새 탭 열기
         driver.execute_script("window.open('');")
@@ -385,7 +413,24 @@ ChromeDriver 버전: {chromedriver_version}
         """서버 빌드 업로드 (TeamCity 방식)"""
         try:
             if driver is None:
-                driver = AWSManager.start_driver()
+                print("[서버업로드] ChromeDriver 시작 중...")
+                try:
+                    driver = AWSManager.start_driver()
+                except Exception as e:
+                    # ChromeDriver 시작 실패 시 재시도
+                    print(f"[서버업로드] ⚠️ ChromeDriver 시작 실패, 5초 후 재시도...")
+                    print(f"[서버업로드] 오류: {e}")
+                    time.sleep(5)
+                    
+                    # 모든 Chrome/ChromeDriver 프로세스 강제 종료
+                    print("[서버업로드] 모든 Chrome 프로세스 강제 종료 중...")
+                    os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                    os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
+                    time.sleep(3)
+                    
+                    # 재시도
+                    print("[서버업로드] ChromeDriver 재시작 시도...")
+                    driver = AWSManager.start_driver()
             
             # 1. TeamCity 빌드 배포 페이지 접속
             teamcity_url = "https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_Deployment_DeployBuild?mode=branches#all-projects"
@@ -395,7 +440,6 @@ ChromeDriver 버전: {chromedriver_version}
             time.sleep(2)
             
             # 2. Run 버튼 클릭 (클릭 가능할 때까지 대기)
-            print("[서버업로드] Run 버튼 대기 중...")
             run_button_xpath = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button'
             wait = WebDriverWait(driver, 60)  # 타임아웃을 60초로 증가
             
@@ -403,68 +447,73 @@ ChromeDriver 버전: {chromedriver_version}
             time.sleep(3)
             
             try:
+                print("[서버업로드] [단계 1/3] Run 버튼 대기 중...")
                 run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath)))
-                print("[서버업로드] Run 버튼 클릭")
+                print("[서버업로드] [단계 1/3] Run 버튼 클릭")
                 run_button.click()
+                print("[서버업로드] [단계 1/3] ✅ Run 버튼 클릭 완료")
             except TimeoutException:
-                print("[서버업로드] ⚠️ Run 버튼을 찾을 수 없습니다. 대체 XPath 시도...")
+                print("[서버업로드] [단계 1/3] ⚠️ Run 버튼을 찾을 수 없습니다. 대체 XPath 시도...")
                 # 대체 XPath 시도
                 alternative_xpath = "//button[contains(@class, 'btn-run') or contains(text(), 'Run')]"
                 try:
                     run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_xpath)))
                     run_button.click()
-                    print("[서버업로드] 대체 XPath로 Run 버튼 클릭 성공")
-                except:
-                    raise Exception("Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
+                    print("[서버업로드] [단계 1/3] ✅ 대체 XPath로 Run 버튼 클릭 성공")
+                except Exception as e:
+                    raise Exception(f"[단계 1/3 실패] Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었거나 로그인이 필요합니다. XPath: {run_button_xpath}, 대체: {alternative_xpath}")
             
             time.sleep(2)
             
             # 3. 빌드 경로 입력 (텍스트 입력 가능할 때까지 대기)
-            print("[서버업로드] 빌드 경로 입력 필드 대기 중...")
             path_input_xpath = '//*[@id="parameter_build_to_deploy_nas_path_804258969"]'
             
             try:
+                print(f"[서버업로드] [단계 2/3] 빌드 경로 입력 필드 대기 중... (빌드: {full_build_name})")
                 path_input = wait.until(EC.presence_of_element_located((By.XPATH, path_input_xpath)))
                 # 입력 가능할 때까지 추가 대기
                 wait.until(EC.element_to_be_clickable((By.XPATH, path_input_xpath)))
             except TimeoutException:
-                print("[서버업로드] ⚠️ 빌드 경로 입력 필드를 찾을 수 없습니다. 대체 방법 시도...")
+                print("[서버업로드] [단계 2/3] ⚠️ 빌드 경로 입력 필드를 찾을 수 없습니다. 대체 방법 시도...")
                 # name 속성으로 찾기 시도
                 try:
                     path_input = wait.until(EC.presence_of_element_located((By.NAME, "parameter_build_to_deploy_nas_path")))
-                    print("[서버업로드] name 속성으로 입력 필드 찾기 성공")
+                    print("[서버업로드] [단계 2/3] name 속성으로 입력 필드 찾기 성공")
                 except:
                     # class나 placeholder로 찾기 시도
                     try:
                         path_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, 'path') or contains(@name, 'nas')]")))
-                        print("[서버업로드] placeholder 속성으로 입력 필드 찾기 성공")
-                    except:
-                        raise Exception("빌드 경로 입력 필드를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
+                        print("[서버업로드] [단계 2/3] placeholder 속성으로 입력 필드 찾기 성공")
+                    except Exception as e:
+                        raise Exception(f"[단계 2/3 실패] 빌드 경로 입력 필드를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {path_input_xpath}")
             
             # 빌드 경로 생성 (예: \\pubg-pds\PBB\Builds\CompileBuild_DEV_game_dev_SEL294706_r357283)
             build_path = f"\\\\pubg-pds\\PBB\\Builds\\{full_build_name}"
-            print(f"[서버업로드] 빌드 경로 입력: {build_path}")
+            print(f"[서버업로드] [단계 2/3] 빌드 경로 입력: {build_path}")
             path_input.clear()
             path_input.send_keys(build_path)
             time.sleep(2)
+            print(f"[서버업로드] [단계 2/3] ✅ 빌드 경로 입력 완료")
             
             # 4. Run 버튼 클릭 (최종 실행, 클릭 가능할 때까지 대기)
-            print("[서버업로드] 최종 Run 버튼 대기 중...")
             final_run_button_xpath = '//*[@id="runCustomBuildButton"]'
             
             try:
+                print("[서버업로드] [단계 3/3] 최종 Run 버튼 대기 중...")
                 final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, final_run_button_xpath)))
-                print("[서버업로드] 최종 Run 버튼 클릭")
+                print("[서버업로드] [단계 3/3] 최종 Run 버튼 클릭")
                 final_run_button.click()
+                print("[서버업로드] [단계 3/3] ✅ 최종 Run 버튼 클릭 완료")
             except TimeoutException:
-                print("[서버업로드] ⚠️ 최종 Run 버튼을 찾을 수 없습니다. 대체 방법 시도...")
+                print("[서버업로드] [단계 3/3] ⚠️ 최종 Run 버튼을 찾을 수 없습니다. 대체 방법 시도...")
                 try:
                     # 대체 XPath 시도
-                    final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@id, 'runCustomBuild') or contains(text(), 'Run')]")))
+                    alternative_final_xpath = "//button[contains(@id, 'runCustomBuild') or contains(text(), 'Run')]"
+                    final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_final_xpath)))
                     final_run_button.click()
-                    print("[서버업로드] 대체 XPath로 최종 Run 버튼 클릭 성공")
-                except:
-                    raise Exception("최종 Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
+                    print("[서버업로드] [단계 3/3] ✅ 대체 XPath로 최종 Run 버튼 클릭 성공")
+                except Exception as e:
+                    raise Exception(f"[단계 3/3 실패] 최종 Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {final_run_button_xpath}")
             
             time.sleep(3)
             
@@ -475,20 +524,22 @@ ChromeDriver 버전: {chromedriver_version}
                 print("export_upload_result 오류")
                 
         except TimeoutException as e:
-            error_msg = f"[서버업로드] ❌ 타임아웃 오류: {e}"
+            error_msg = f"[서버업로드] ❌ 타임아웃 오류: {str(e)}"
             print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":timeout:")
             except:
-                print("export_upload_result 오류")
-            raise Exception(f"서버 업로드 타임아웃: 페이지 로딩이 느리거나 요소를 찾을 수 없습니다. TeamCity 페이지를 확인하세요.")
+                print("[서버업로드] export_upload_result 오류")
+            # 원본 예외를 그대로 발생시켜 단계 정보 유지
+            raise
         except Exception as e:
-            error_msg = f"[서버업로드] ❌ 오류: {e}"
+            error_msg = f"[서버업로드] ❌ 오류: {str(e)}"
             print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "teamcity_deploy", ":failed:")
             except:
-                print("export_upload_result 오류")
+                print("[서버업로드] export_upload_result 오류")
+            # 예외를 다시 발생시켜서 호출자에게 실패를 알림 (단계 정보 포함)
             raise
     
     @staticmethod
@@ -505,8 +556,25 @@ ChromeDriver 버전: {chromedriver_version}
                 print(f"[update_server_container] branch 기본값 설정: {branch}")
             
             if driver is None:
-                print("[update_server_container] 드라이버 시작 중...")
-                driver = AWSManager.start_driver()
+                print("[update_server_container] ChromeDriver 시작 중...")
+                try:
+                    driver = AWSManager.start_driver()
+                except Exception as e:
+                    # ChromeDriver 시작 실패 시 재시도
+                    print(f"[update_server_container] ⚠️ ChromeDriver 시작 실패, 5초 후 재시도...")
+                    print(f"[update_server_container] 오류: {e}")
+                    time.sleep(5)
+                    
+                    # 모든 Chrome/ChromeDriver 프로세스 강제 종료
+                    print("[update_server_container] 모든 Chrome 프로세스 강제 종료 중...")
+                    os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                    os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
+                    time.sleep(3)
+                    
+                    # 재시도
+                    print("[update_server_container] ChromeDriver 재시작 시도...")
+                    driver = AWSManager.start_driver()
+                
                 driver.implicitly_wait(10)
                 
                 print(f"[update_server_container] AWS 페이지 이동: {aws_link}")
@@ -527,112 +595,179 @@ ChromeDriver 버전: {chromedriver_version}
             wait = WebDriverWait(driver, 20)
             
             # CONTAINER GAMESERVERS 클릭
-            print("[update_server_container] CONTAINER GAMESERVERS 탭 클릭 대기 중...")
-            container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
-            container_tab.click()
-            time.sleep(1)
+            try:
+                print("[update_server_container] [단계 1/11] CONTAINER GAMESERVERS 탭 클릭 대기 중...")
+                container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                container_tab.click()
+                time.sleep(1)
+                print("[update_server_container] [단계 1/11] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 1/11 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다. 로그인이 필요하거나 페이지 구조가 변경되었을 수 있습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")
             
             # SELECT ALL 버튼 클릭
-            print("[update_server_container] SELECT ALL 버튼 클릭 대기 중...")
-            select_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
-            select_all_button.click()
-            time.sleep(1)
+            try:
+                print("[update_server_container] [단계 1/11] SELECT ALL 버튼 클릭 대기 중...")
+                select_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+                select_all_button.click()
+                time.sleep(1)
+                print("[update_server_container] [단계 1/11] ✅ SELECT ALL 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 1/11 실패] SELECT ALL 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")
             
             # 돋보기 (필터) 버튼 클릭
-            print("[update_server_container] 필터 버튼 클릭 대기 중...")
-            filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
-            filter_button.click()
-            time.sleep(1)
+            try:
+                print("[update_server_container] [단계 2/11] 필터 버튼 클릭 대기 중...")
+                filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
+                filter_button.click()
+                time.sleep(1)
+                print("[update_server_container] [단계 2/11] ✅ 필터 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 2/11 실패] 필터 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button")
             
             # 브랜치 입력
-            print("[update_server_container] 브랜치 입력 필드 대기 중...")
-            branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
-            branch_input.send_keys(branch)
-            time.sleep(1.5)
+            try:
+                print(f"[update_server_container] [단계 3/11] 브랜치 입력 필드 대기 중... (브랜치: {branch})")
+                branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                branch_input.send_keys(branch)
+                time.sleep(1.5)
+                print(f"[update_server_container] [단계 3/11] ✅ 브랜치 '{branch}' 입력 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 3/11 실패] 브랜치 입력 필드를 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input")
             
             # 정확히 일치하는 branch 선택
-            print(f"[update_server_container] 브랜치 '{branch}' 검색 중...")
-            for x in range(1, 10):
-                try:
-                    element = wait.until(EC.presence_of_element_located((By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')))
-                    if element.text == branch:
-                        print(f"[update_server_container] 브랜치 '{branch}' 발견, 클릭")
-                        element.click()
-                        break
-                except Exception as e:
-                    print(f"[update_server_container] 요소 {x} 찾기 실패: {e}")
-                    if x == 9:
-                        raise Exception(f"브랜치 '{branch}'를 찾을 수 없습니다")
+            try:
+                print(f"[update_server_container] [단계 4/11] 브랜치 '{branch}' 검색 중...")
+                branch_found = False
+                for x in range(1, 10):
+                    try:
+                        element = wait.until(EC.presence_of_element_located((By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')))
+                        if element.text == branch:
+                            print(f"[update_server_container] [단계 4/11] 브랜치 '{branch}' 발견 (목록 {x}번째), 클릭")
+                            element.click()
+                            branch_found = True
+                            break
+                    except Exception as e:
+                        if x == 9:
+                            break
+                        continue
+                
+                if not branch_found:
+                    raise Exception(f"[단계 4/11 실패] 브랜치 '{branch}'를 목록에서 찾을 수 없습니다. 브랜치명이 정확한지 확인하세요.")
+                
+                print(f"[update_server_container] [단계 4/11] ✅ 브랜치 '{branch}' 선택 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 4/11 실패] 브랜치 목록을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[x]/span")
             
-            time.sleep(1)
-            print("[update_server_container] Next 버튼 클릭 (브랜치)")
-            next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-            next_button1.click()
+            # Next 버튼 (브랜치)
+            try:
+                time.sleep(1)
+                print("[update_server_container] [단계 5/11] Next 버튼 클릭 (브랜치)")
+                next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                next_button1.click()
+                print("[update_server_container] [단계 5/11] ✅ Next 버튼 클릭 완료 (브랜치)")
+            except TimeoutException as e:
+                raise Exception(f"[단계 5/11 실패] Next 버튼을 찾을 수 없습니다 (브랜치). XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]")
             
             # TAG 입력
-            print(f"[update_server_container] TAG 입력: {full_build_name}")
-            tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
-            tag_input.send_keys(full_build_name)
-            time.sleep(1)
+            try:
+                print(f"[update_server_container] [단계 6/11] TAG 입력 필드 대기 중... (TAG: {full_build_name})")
+                tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                tag_input.send_keys(full_build_name)
+                time.sleep(1)
+                print(f"[update_server_container] [단계 6/11] ✅ TAG '{full_build_name}' 입력 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 6/11 실패] TAG 입력 필드를 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input")
             
-            print("[update_server_container] TAG 선택")
-            tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
-            tag_option.click()
-            time.sleep(1)
+            # TAG 선택
+            try:
+                print("[update_server_container] [단계 7/11] TAG 선택")
+                tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
+                tag_option.click()
+                time.sleep(1)
+                print("[update_server_container] [단계 7/11] ✅ TAG 선택 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 7/11 실패] TAG 목록에서 첫 번째 항목을 찾을 수 없습니다. TAG '{full_build_name}'가 존재하는지 확인하세요. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span")
             
-            print("[update_server_container] Next 버튼 클릭 (TAG)")
-            next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-            next_button2.click()
+            # Next 버튼 (TAG)
+            try:
+                print("[update_server_container] [단계 8/11] Next 버튼 클릭 (TAG)")
+                next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                next_button2.click()
+                print("[update_server_container] [단계 8/11] ✅ Next 버튼 클릭 완료 (TAG)")
+            except TimeoutException as e:
+                raise Exception(f"[단계 8/11 실패] Next 버튼을 찾을 수 없습니다 (TAG). XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]")
             
             # Build config 체크박스
-            print("[update_server_container] Build config 체크박스 클릭")
-            build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
-            build_config_checkbox.click()
-            time.sleep(1)
+            try:
+                print("[update_server_container] [단계 9/11] Build config 체크박스 클릭")
+                build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
+                build_config_checkbox.click()
+                time.sleep(1)
+                print("[update_server_container] [단계 9/11] ✅ Build config 체크박스 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 9/11 실패] Build config 체크박스를 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]")
             
-            print("[update_server_container] Next 버튼 클릭 (Build config)")
-            next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-            next_button3.click()
+            # Next 버튼 (Build config)
+            try:
+                print("[update_server_container] [단계 10/11] Next 버튼 클릭 (Build config)")
+                next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                next_button3.click()
+                print("[update_server_container] [단계 10/11] ✅ Next 버튼 클릭 완료 (Build config)")
+            except TimeoutException as e:
+                raise Exception(f"[단계 10/11 실패] Next 버튼을 찾을 수 없습니다 (Build config). XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]")
             
             # SELECT 버튼 클릭
-            print("[update_server_container] SELECT 버튼 클릭")
-            select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
-            select_button.click()
-            time.sleep(1)
+            try:
+                print("[update_server_container] [단계 11/11] SELECT 버튼 클릭")
+                select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
+                select_button.click()
+                time.sleep(1)
+                print("[update_server_container] [단계 11/11] ✅ SELECT 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 11/11 실패] SELECT 버튼을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button")
             
             # APPLY 버튼 클릭
-            print("[update_server_container] APPLY 버튼 클릭")
-            apply_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
-            apply_button.click()
+            try:
+                print("[update_server_container] [최종 단계] APPLY 버튼 클릭")
+                apply_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
+                apply_button.click()
+                print("[update_server_container] [최종 단계] ✅ APPLY 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[최종 단계 실패] APPLY 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]")
             
             if not is_debug:
                 # 팝업 OK 버튼
-                print("[update_server_container] 확인 팝업 OK 버튼 클릭")
-                ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                ok_button.click()
                 try:
-                    export_upload_result(aws_link, full_build_name, "aws_apply", ":update_done:")
-                except:
-                    print("export_upload_result 오류")
+                    print("[update_server_container] [확인] 팝업 OK 버튼 클릭")
+                    ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                    ok_button.click()
+                    print("[update_server_container] [확인] ✅ 팝업 OK 버튼 클릭 완료")
+                    try:
+                        export_upload_result(aws_link, full_build_name, "aws_apply", ":update_done:")
+                    except:
+                        print("[update_server_container] export_upload_result 오류")
+                except TimeoutException as e:
+                    raise Exception(f"[확인 단계 실패] 확인 팝업 OK 버튼을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/button[1]")
                     
             print("[update_server_container] ✅ 서버 패치 완료")
             
         except TimeoutException as e:
-            error_msg = f"[update_server_container] ❌ 타임아웃: 요소를 찾을 수 없습니다 - {e}"
+            error_msg = f"[update_server_container] ❌ 타임아웃: {str(e)}"
             print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "aws_apply", ":timeout:")
             except:
-                print("export_upload_result 오류")
-            raise Exception(f"서버 패치 타임아웃: 요소를 찾을 수 없습니다")
+                print("[update_server_container] export_upload_result 오류")
+            # 원본 예외를 그대로 발생시켜 단계 정보 유지
+            raise
         except Exception as e:
-            error_msg = f"[update_server_container] ❌ 패치 오류: {e}"
+            error_msg = f"[update_server_container] ❌ 패치 오류: {str(e)}"
             print(error_msg)
             try:
                 export_upload_result(aws_link, full_build_name, "aws_apply", ":failed:")
             except:
-                print("export_upload_result 오류")
-            # 예외를 다시 발생시켜서 호출자에게 실패를 알림
+                print("[update_server_container] export_upload_result 오류")
+            # 예외를 다시 발생시켜서 호출자에게 실패를 알림 (단계 정보 포함)
             raise
     
     @staticmethod
@@ -661,93 +796,193 @@ ChromeDriver 버전: {chromedriver_version}
             driver.implicitly_wait(10)
             print("[delete_server_container] 삭제 작업 시작...")
             
+            wait = WebDriverWait(driver, 20)
+            
             # CONTAINER GAMESERVERS 클릭
-            print("[delete_server_container] CONTAINER GAMESERVERS 탭 클릭")
-            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span").click()
-            driver.implicitly_wait(5)
-            time.sleep(0.5)
+            try:
+                print("[delete_server_container] [단계 1/4] CONTAINER GAMESERVERS 탭 클릭")
+                container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                container_tab.click()
+                time.sleep(0.5)
+                print("[delete_server_container] [단계 1/4] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 1/4 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")
             
             # Select all 버튼 클릭
-            print("[delete_server_container] Select All 버튼 클릭")
-            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]").click()
-            time.sleep(0.5)
-            driver.implicitly_wait(5)
+            try:
+                print("[delete_server_container] [단계 2/4] Select All 버튼 클릭")
+                select_all_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+                select_all_btn.click()
+                time.sleep(0.5)
+                print("[delete_server_container] [단계 2/4] ✅ Select All 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 2/4 실패] Select All 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")
             
             # Delete Servers 버튼 클릭
-            print("[delete_server_container] Delete Servers 버튼 클릭")
-            driver.find_element(By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[4]").click()
-            time.sleep(0.5)
-            driver.implicitly_wait(5)
+            try:
+                print("[delete_server_container] [단계 3/4] Delete Servers 버튼 클릭")
+                delete_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[4]")))
+                delete_btn.click()
+                time.sleep(0.5)
+                print("[delete_server_container] [단계 3/4] ✅ Delete Servers 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 3/4 실패] Delete Servers 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[4]")
 
             # YES 버튼 클릭
-            print("[delete_server_container] YES 버튼 클릭")
-            driver.find_element(By.XPATH, "/html/body/div[3]/div[1]/div[2]/div/button[1]").click()
-            time.sleep(0.5)
-            driver.implicitly_wait(5)
+            try:
+                print("[delete_server_container] [단계 4/4] YES 버튼 클릭")
+                yes_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/div[1]/div[2]/div/button[1]")))
+                yes_btn.click()
+                time.sleep(0.5)
+                print("[delete_server_container] [단계 4/4] ✅ YES 버튼 클릭 완료")
+            except TimeoutException as e:
+                raise Exception(f"[단계 4/4 실패] 확인 팝업의 YES 버튼을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/button[1]")
             
             print("[delete_server_container] ✅ 서버 삭제 작업 완료")
             
-        except Exception as e:
-            error_msg = f"[delete_server_container] ❌ 서버 삭제 오류: {e}"
+        except TimeoutException as e:
+            error_msg = f"[delete_server_container] ❌ 타임아웃: {str(e)}"
             print(error_msg)
-            raise Exception(error_msg)
+            # 원본 예외를 그대로 발생시켜 단계 정보 유지
+            raise
+        except Exception as e:
+            error_msg = f"[delete_server_container] ❌ 서버 삭제 오류: {str(e)}"
+            print(error_msg)
+            # 예외를 다시 발생시켜서 호출자에게 실패를 알림 (단계 정보 포함)
+            raise
     
     @staticmethod
     def run_teamcity_build(driver, url_link: str = 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects',
                           branch: str = 'game', is_debug: bool = False):
         """TeamCity 빌드 실행"""
-        if driver is None:
-            driver = AWSManager.start_driver()
-            driver.implicitly_wait(10)
-            driver.get(url_link)
-        
-        wait = WebDriverWait(driver, 10)
-        
-        # RUN 버튼 클릭 (재시도 로직)
-        for _ in range(3):
+        try:
+            if driver is None:
+                print("[빌드굽기] 드라이버 시작 중...")
+                driver = AWSManager.start_driver()
+                driver.implicitly_wait(10)
+                print(f"[빌드굽기] TeamCity 페이지 이동: {url_link}")
+                driver.get(url_link)
+            
+            wait = WebDriverWait(driver, 20)
+            
+            # RUN 버튼 클릭 (재시도 로직)
+            run_button_clicked = False
+            print(f"[빌드굽기] [단계 1/9] RUN 버튼 클릭 (브랜치: {branch})")
+            for attempt in range(3):
+                try:
+                    button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button')))
+                    button.click()
+                    run_button_clicked = True
+                    print(f"[빌드굽기] [단계 1/9] ✅ RUN 버튼 클릭 완료 (시도 {attempt + 1}/3)")
+                    break
+                except StaleElementReferenceException:
+                    print(f"[빌드굽기] [단계 1/9] StaleElementReferenceException, 재시도 중... ({attempt + 1}/3)")
+                    time.sleep(1)
+                    continue
+                except TimeoutException:
+                    if attempt == 2:
+                        raise Exception(f"[단계 1/9 실패] RUN 버튼을 찾을 수 없습니다 (3번 시도 실패). XPath: //*[@id=\"main-content-tag\"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button")
+                    time.sleep(1)
+                    continue
+            
+            if not run_button_clicked:
+                raise Exception(f"[단계 1/9 실패] RUN 버튼 클릭 실패")
+            
+            # 탭 네비게이션
             try:
-                button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button')))
-                button.click()
-                break
-            except StaleElementReferenceException:
-                print("StaleElementReferenceException, 재시도...")
-                continue
+                print("[빌드굽기] [단계 2/9] 탭 0 클릭")
+                tab0 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-0"]/p/a')))
+                tab0.click()
+                time.sleep(0.5)
+                print("[빌드굽기] [단계 2/9] ✅ 탭 0 클릭 완료")
             except TimeoutException:
-                print("버튼을 찾지 못했습니다.")
-                break
-        
-        driver.find_element(By.XPATH, '//*[@id="tab-0"]/p/a').click()
-        driver.implicitly_wait(5)
-        
-        driver.find_element(By.XPATH, '//*[@id="moveToTop"]').click()
-        driver.implicitly_wait(5)
-        
-        driver.find_element(By.XPATH, '//*[@id="tab-2"]/p/a').click()
-        driver.implicitly_wait(5)
-        
-        driver.find_element(By.XPATH, '//*[@id="runBranchSelector_container"]/span/button/span[3]/span').click()
-        driver.implicitly_wait(5)
-        
-        # 브랜치 선택
-        wait = WebDriverWait(driver, 10)
-        input_box = wait.until(EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Filter branches"]')))
-        input_box.send_keys(branch)
-        
-        button = wait.until(EC.element_to_be_clickable((By.XPATH, f'//span[@class="ring-list-label" and @title="{branch}"]')))
-        button.click()
-        
-        time.sleep(3)
-        driver.find_element(By.XPATH, '//*[@id="tab-3"]/p/a').click()
-        driver.implicitly_wait(5)
-        
-        # 옵션 설정
-        driver.find_element(By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_2"]').click()
-        driver.find_element(By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]').click()
-        driver.implicitly_wait(5)
-        
-        driver.find_element(By.XPATH, '//*[@id="parameter_build_docker_2083990112"]').click()
-        driver.implicitly_wait(5)
-        
-        if not is_debug:
-            driver.find_element(By.XPATH, '//*[@id="runCustomBuildButton"]').click()
+                raise Exception(f"[단계 2/9 실패] 탭 0을 찾을 수 없습니다. XPath: //*[@id=\"tab-0\"]/p/a")
+            
+            try:
+                print("[빌드굽기] [단계 3/9] moveToTop 클릭")
+                move_top = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="moveToTop"]')))
+                move_top.click()
+                time.sleep(0.5)
+                print("[빌드굽기] [단계 3/9] ✅ moveToTop 클릭 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 3/9 실패] moveToTop 버튼을 찾을 수 없습니다. XPath: //*[@id=\"moveToTop\"]")
+            
+            try:
+                print("[빌드굽기] [단계 4/9] 탭 2 클릭")
+                tab2 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-2"]/p/a')))
+                tab2.click()
+                time.sleep(0.5)
+                print("[빌드굽기] [단계 4/9] ✅ 탭 2 클릭 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 4/9 실패] 탭 2를 찾을 수 없습니다. XPath: //*[@id=\"tab-2\"]/p/a")
+            
+            try:
+                print("[빌드굽기] [단계 5/9] 브랜치 선택기 열기")
+                branch_selector = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="runBranchSelector_container"]/span/button/span[3]/span')))
+                branch_selector.click()
+                time.sleep(0.5)
+                print("[빌드굽기] [단계 5/9] ✅ 브랜치 선택기 열기 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 5/9 실패] 브랜치 선택기를 찾을 수 없습니다. XPath: //*[@id=\"runBranchSelector_container\"]/span/button/span[3]/span")
+            
+            # 브랜치 선택
+            try:
+                print(f"[빌드굽기] [단계 6/9] 브랜치 '{branch}' 입력 및 선택")
+                input_box = wait.until(EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Filter branches"]')))
+                input_box.send_keys(branch)
+                time.sleep(1)
+                
+                branch_option = wait.until(EC.element_to_be_clickable((By.XPATH, f'//span[@class="ring-list-label" and @title="{branch}"]')))
+                branch_option.click()
+                print(f"[빌드굽기] [단계 6/9] ✅ 브랜치 '{branch}' 선택 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 6/9 실패] 브랜치 '{branch}'를 찾을 수 없습니다. 브랜치명이 정확한지 확인하세요.")
+            
+            try:
+                time.sleep(3)
+                print("[빌드굽기] [단계 7/9] 탭 3 클릭")
+                tab3 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-3"]/p/a')))
+                tab3.click()
+                time.sleep(0.5)
+                print("[빌드굽기] [단계 7/9] ✅ 탭 3 클릭 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 7/9 실패] 탭 3을 찾을 수 없습니다. XPath: //*[@id=\"tab-3\"]/p/a")
+            
+            # 옵션 설정
+            try:
+                print("[빌드굽기] [단계 8/9] 빌드 옵션 설정")
+                option1 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_2"]')))
+                option1.click()
+                time.sleep(0.3)
+                
+                option2 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]')))
+                option2.click()
+                time.sleep(0.5)
+                
+                docker_option = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="parameter_build_docker_2083990112"]')))
+                docker_option.click()
+                time.sleep(0.5)
+                print("[빌드굽기] [단계 8/9] ✅ 빌드 옵션 설정 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 8/9 실패] 빌드 옵션 설정 요소를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")
+            
+            if not is_debug:
+                try:
+                    print("[빌드굽기] [단계 9/9] 최종 Run 버튼 클릭")
+                    run_custom_build = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="runCustomBuildButton"]')))
+                    run_custom_build.click()
+                    print("[빌드굽기] [단계 9/9] ✅ 최종 Run 버튼 클릭 완료")
+                except TimeoutException:
+                    raise Exception(f"[단계 9/9 실패] 최종 Run 버튼을 찾을 수 없습니다. XPath: //*[@id=\"runCustomBuildButton\"]")
+            
+            print("[빌드굽기] ✅ 빌드 실행 완료")
+            
+        except TimeoutException as e:
+            error_msg = f"[빌드굽기] ❌ 타임아웃: {str(e)}"
+            print(error_msg)
+            raise
+        except Exception as e:
+            error_msg = f"[빌드굽기] ❌ 오류: {str(e)}"
+            print(error_msg)
+            raise
 

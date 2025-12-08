@@ -552,6 +552,13 @@ class ScheduleDialog(QDialog):
                 'awsurl': False,
                 'branch': False
             },
+            'Chrome프로세스정리': {
+                'src_path': False,
+                'dest_path': False,
+                'buildname': False,
+                'awsurl': False,
+                'branch': False
+            },
             'TEST': {
                 'src_path': False,
                 'dest_path': False,

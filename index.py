@@ -79,7 +79,8 @@ class QuickBuildApp(QMainWindow):
         # 실행 옵션 목록
         self.execution_options = [
             '클라복사', '전체복사', '서버업로드및패치', '서버업로드', 
-            '서버패치', '서버삭제', '서버복사', '빌드굽기', '테스트(로그)', 'TEST'
+            '서버패치', '서버삭제', '서버복사', '빌드굽기', '테스트(로그)', 
+            'Chrome프로세스정리', 'TEST'
         ]
         
         # UI 초기화
@@ -967,6 +968,38 @@ Branch: {branch}
                 AWSManager.run_teamcity_build(driver=None, branch=branch or buildname)
                 return f"빌드굽기 완료: {branch or buildname}"
             
+            elif option == "Chrome프로세스정리":
+                # Chrome 및 ChromeDriver 프로세스 정리
+                print("[Chrome프로세스정리] 시작")
+                
+                # ChromeDriver 프로세스 종료
+                chromedriver_killed = AWSManager.kill_all_chromedrivers()
+                print(f"[Chrome프로세스정리] ChromeDriver 프로세스 {chromedriver_killed}개 종료")
+                
+                # Chrome 프로세스 종료
+                chrome_result = os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                chrome_killed = "성공" if chrome_result == 0 else "없음"
+                print(f"[Chrome프로세스정리] Chrome 프로세스 종료: {chrome_killed}")
+                
+                # ChromeTEMP 캐시 정리 (선택적)
+                try:
+                    cache_dir = AWSManager.CHROME_USER_DATA_DIR
+                    if os.path.exists(cache_dir):
+                        import shutil
+                        shutil.rmtree(cache_dir)
+                        print(f"[Chrome프로세스정리] 캐시 디렉터리 삭제: {cache_dir}")
+                        cache_cleaned = "✅ 캐시 정리 완료"
+                    else:
+                        cache_cleaned = "캐시 없음"
+                except Exception as e:
+                    cache_cleaned = f"⚠️ 캐시 정리 실패: {e}"
+                    print(f"[Chrome프로세스정리] {cache_cleaned}")
+                
+                # 결과 요약
+                summary = f"ChromeDriver: {chromedriver_killed}개 종료, Chrome: {chrome_killed}, {cache_cleaned}"
+                print(f"[Chrome프로세스정리] 완료 - {summary}")
+                return f"Chrome프로세스정리 완료 - {summary}"
+            
             else:
                 return f"{option} 실행 완료 (미구현)"
         
@@ -980,9 +1013,10 @@ Branch: {branch}
         schedule_id = schedule.get('id', '')
         schedule_name = schedule.get('name', 'Unknown')
         
-        # 워커 제거
+        # 워커 제거 (스레드가 완전히 종료된 후 안전하게 삭제)
         if schedule_id in self.running_workers:
-            del self.running_workers[schedule_id]
+            worker = self.running_workers.pop(schedule_id)
+            worker.finished.connect(worker.deleteLater)  # 스레드 종료 후 삭제
         
         # UI 상태 업데이트
         if schedule_id in self.schedule_widgets:
