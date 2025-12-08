@@ -27,6 +27,70 @@ class AWSManager:
     CHROME_DEBUGGING_PORT = 9222
     
     @staticmethod
+    def teamcity_auto_login(driver, teamcity_id: str = '', teamcity_pw: str = ''):
+        """
+        Teamcity 자동 로그인 시도
+        
+        Args:
+            driver: Selenium WebDriver
+            teamcity_id: Teamcity 아이디
+            teamcity_pw: Teamcity 비밀번호
+        
+        Returns:
+            bool: 로그인 성공 여부
+        """
+        try:
+            # 로그인 정보가 없으면 스킵
+            if not teamcity_id or not teamcity_pw:
+                print("[Teamcity 로그인] 로그인 정보가 없습니다. 스킵합니다.")
+                return False
+            
+            # 로그인 페이지가 있는지 확인
+            wait = WebDriverWait(driver, 5)
+            
+            # ID 입력란 찾기
+            try:
+                print("[Teamcity 로그인] 로그인 페이지 감지됨. 자동 로그인 시도...")
+                id_input = wait.until(EC.presence_of_element_located(
+                    (By.XPATH, '/html/body/div[1]/div/div/div[2]/form/div[1]/input')
+                ))
+                
+                # ID 입력
+                print(f"[Teamcity 로그인] ID 입력: {teamcity_id}")
+                id_input.clear()
+                id_input.send_keys(teamcity_id)
+                time.sleep(0.5)
+                
+                # 비밀번호 입력
+                pw_input = driver.find_element(By.XPATH, '/html/body/div[1]/div/div/div[2]/form/div[2]/input')
+                print("[Teamcity 로그인] 비밀번호 입력")
+                pw_input.clear()
+                pw_input.send_keys(teamcity_pw)
+                time.sleep(0.5)
+                
+                # 로그인 버튼 클릭
+                login_button = driver.find_element(By.XPATH, '/html/body/div[1]/div/div/div[2]/form/div[4]/input')
+                print("[Teamcity 로그인] 로그인 버튼 클릭")
+                login_button.click()
+                
+                # 로그인 완료 대기 (페이지 로드)
+                time.sleep(3)
+                print("[Teamcity 로그인] ✅ 자동 로그인 완료")
+                return True
+                
+            except TimeoutException:
+                # 로그인 페이지가 없음 (이미 로그인됨)
+                print("[Teamcity 로그인] 로그인 페이지가 없습니다. (이미 로그인된 상태)")
+                return True
+            except Exception as e:
+                print(f"[Teamcity 로그인] ⚠️ 자동 로그인 실패: {e}")
+                return False
+        
+        except Exception as e:
+            print(f"[Teamcity 로그인] ⚠️ 로그인 시도 중 오류: {e}")
+            return False
+    
+    @staticmethod
     def get_base_path():
         """실행 파일 기준 경로 반환"""
         if getattr(sys, 'frozen', False):
@@ -409,7 +473,8 @@ ChromeDriver 버전: {chromedriver_version}
     @staticmethod
     def upload_server_build(driver, revision: int, zip_path: str, aws_link: str, 
                            branch: str = 'game', build_type: str = 'DEV', 
-                           full_build_name: str = 'TEST'):
+                           full_build_name: str = 'TEST', 
+                           teamcity_id: str = '', teamcity_pw: str = ''):
         """서버 빌드 업로드 (TeamCity 방식)"""
         try:
             if driver is None:
@@ -438,6 +503,9 @@ ChromeDriver 버전: {chromedriver_version}
             driver.get(teamcity_url)
             driver.implicitly_wait(10)
             time.sleep(2)
+            
+            # 자동 로그인 시도
+            AWSManager.teamcity_auto_login(driver, teamcity_id, teamcity_pw)
             
             # 2. Run 버튼 클릭 (클릭 가능할 때까지 대기)
             run_button_xpath = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button'
@@ -853,7 +921,8 @@ ChromeDriver 버전: {chromedriver_version}
     
     @staticmethod
     def run_teamcity_build(driver, url_link: str = 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects',
-                          branch: str = 'game', is_debug: bool = False):
+                          branch: str = 'game', is_debug: bool = False,
+                          teamcity_id: str = '', teamcity_pw: str = ''):
         """TeamCity 빌드 실행"""
         try:
             if driver is None:
@@ -862,6 +931,10 @@ ChromeDriver 버전: {chromedriver_version}
                 driver.implicitly_wait(10)
                 print(f"[빌드굽기] TeamCity 페이지 이동: {url_link}")
                 driver.get(url_link)
+                time.sleep(2)
+                
+                # 자동 로그인 시도
+                AWSManager.teamcity_auto_login(driver, teamcity_id, teamcity_pw)
             
             wait = WebDriverWait(driver, 20)
             

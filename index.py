@@ -908,6 +908,9 @@ Branch: {branch}
                 revision = self.build_ops.extract_revision_number(full_buildname)
                 buildType = full_buildname.split('_')[1] if '_' in full_buildname else 'DEV'
                 
+                # Teamcity 로그인 정보 가져오기
+                teamcity_id, teamcity_pw = self.config_mgr.get_teamcity_credentials()
+                
                 # TeamCity를 통한 서버 배포 실행
                 AWSManager.upload_server_build(
                     driver=None,
@@ -916,7 +919,9 @@ Branch: {branch}
                     aws_link=awsurl,
                     branch=branch,
                     build_type=buildType,
-                    full_build_name=full_buildname
+                    full_build_name=full_buildname,
+                    teamcity_id=teamcity_id,
+                    teamcity_pw=teamcity_pw
                 )
                 return f"서버업로드 완료: {full_buildname}"
             
@@ -940,6 +945,9 @@ Branch: {branch}
                 os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
                 time.sleep(2)
                 
+                # Teamcity 로그인 정보 가져오기
+                teamcity_id, teamcity_pw = self.config_mgr.get_teamcity_credentials()
+                
                 # TeamCity를 통한 서버 배포 실행
                 AWSManager.upload_server_build(
                     driver=None,
@@ -948,7 +956,9 @@ Branch: {branch}
                     aws_link=awsurl,
                     branch=branch,
                     build_type=buildType,
-                    full_build_name=full_buildname
+                    full_build_name=full_buildname,
+                    teamcity_id=teamcity_id,
+                    teamcity_pw=teamcity_pw
                 )
                 
                 # 패치
@@ -964,8 +974,16 @@ Branch: {branch}
                 return f"서버업로드및패치 완료: {awsurl} ({full_buildname})"
             
             elif option == "빌드굽기":
+                # Teamcity 로그인 정보 가져오기
+                teamcity_id, teamcity_pw = self.config_mgr.get_teamcity_credentials()
+                
                 # TeamCity 빌드 실행
-                AWSManager.run_teamcity_build(driver=None, branch=branch or buildname)
+                AWSManager.run_teamcity_build(
+                    driver=None, 
+                    branch=branch or buildname,
+                    teamcity_id=teamcity_id,
+                    teamcity_pw=teamcity_pw
+                )
                 return f"빌드굽기 완료: {branch or buildname}"
             
             elif option == "Chrome프로세스정리":

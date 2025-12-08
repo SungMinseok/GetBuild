@@ -1,7 +1,8 @@
 """Settings Dialog - 애플리케이션 설정"""
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, 
                              QPushButton, QLabel, QGroupBox, QMessageBox,
-                             QProgressDialog, QTextEdit)
+                             QProgressDialog, QTextEdit, QTabWidget, QLineEdit,
+                             QFormLayout, QWidget)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import json
 import os
@@ -38,9 +39,47 @@ class SettingsDialog(QDialog):
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(400)
+        self.setMinimumWidth(550)
+        self.setMinimumHeight(500)
         
+        layout = QVBoxLayout()
+        
+        # 탭 위젯 생성
+        self.tab_widget = QTabWidget()
+        
+        # General 탭
+        general_tab = self.create_general_tab()
+        self.tab_widget.addTab(general_tab, "General")
+        
+        # ChromeDriver 탭
+        chromedriver_tab = self.create_chromedriver_tab()
+        self.tab_widget.addTab(chromedriver_tab, "ChromeDriver")
+        
+        # LoginInfo 탭
+        logininfo_tab = self.create_logininfo_tab()
+        self.tab_widget.addTab(logininfo_tab, "LoginInfo")
+        
+        layout.addWidget(self.tab_widget)
+        
+        # 버튼
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self.save_button = QPushButton("저장")
+        self.save_button.clicked.connect(self.save_and_close)
+        button_layout.addWidget(self.save_button)
+        
+        self.cancel_button = QPushButton("취소")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def create_general_tab(self):
+        """General 탭 생성"""
+        tab = QWidget()
         layout = QVBoxLayout()
         
         # Debug 모드 그룹
@@ -59,6 +98,15 @@ class SettingsDialog(QDialog):
         
         debug_group.setLayout(debug_layout)
         layout.addWidget(debug_group)
+        
+        layout.addStretch()
+        tab.setLayout(layout)
+        return tab
+    
+    def create_chromedriver_tab(self):
+        """ChromeDriver 탭 생성"""
+        tab = QWidget()
+        layout = QVBoxLayout()
         
         # ChromeDriver 관리 그룹
         chrome_group = QGroupBox("ChromeDriver 관리")
@@ -110,22 +158,52 @@ class SettingsDialog(QDialog):
         chrome_group.setLayout(chrome_layout)
         layout.addWidget(chrome_group)
         
-        # 버튼
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
+        layout.addStretch()
+        tab.setLayout(layout)
+        return tab
+    
+    def create_logininfo_tab(self):
+        """LoginInfo 탭 생성"""
+        tab = QWidget()
+        layout = QVBoxLayout()
         
-        self.save_button = QPushButton("저장")
-        self.save_button.clicked.connect(self.save_and_close)
-        button_layout.addWidget(self.save_button)
+        # Teamcity 로그인 정보 그룹
+        teamcity_group = QGroupBox("Teamcity 로그인 정보")
+        teamcity_layout = QFormLayout()
         
-        self.cancel_button = QPushButton("취소")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
+        # 로그인 정보 로드
+        login_info = self.settings.get('login_info', {})
+        teamcity_id = login_info.get('teamcity_id', '')
+        teamcity_pw = login_info.get('teamcity_pw', '')
+        
+        # Teamcity ID 입력란
+        self.teamcity_id_input = QLineEdit()
+        self.teamcity_id_input.setText(teamcity_id)
+        self.teamcity_id_input.setPlaceholderText("Teamcity ID를 입력하세요")
+        teamcity_layout.addRow("Teamcity ID:", self.teamcity_id_input)
+        
+        # Teamcity PW 입력란
+        self.teamcity_pw_input = QLineEdit()
+        self.teamcity_pw_input.setText(teamcity_pw)
+        self.teamcity_pw_input.setPlaceholderText("Teamcity 비밀번호를 입력하세요")
+        #self.teamcity_pw_input.setEchoMode(QLineEdit.Password)
+        teamcity_layout.addRow("Teamcity PW:", self.teamcity_pw_input)
+        
+        teamcity_group.setLayout(teamcity_layout)
+        layout.addWidget(teamcity_group)
+        
+        # 안내 문구
+        info_label = QLabel(
+            "서버 업로드 작업 시 Teamcity 로그인이 필요한 경우 자동으로 입력됩니다.\n"
+            "보안을 위해 비밀번호는 암호화되지 않고 평문으로 저장됩니다."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #888; font-size: 9pt; padding: 10px;")
+        layout.addWidget(info_label)
         
         layout.addStretch()
-        layout.addLayout(button_layout)
-        
-        self.setLayout(layout)
+        tab.setLayout(layout)
+        return tab
     
     def load_settings(self):
         """설정 파일 로드"""
@@ -140,7 +218,15 @@ class SettingsDialog(QDialog):
     
     def save_and_close(self):
         """설정 저장 및 닫기"""
+        # Debug 모드 저장
         self.settings['debug_mode'] = self.debug_checkbox.isChecked()
+        
+        # LoginInfo 저장
+        login_info = {
+            'teamcity_id': self.teamcity_id_input.text().strip(),
+            'teamcity_pw': self.teamcity_pw_input.text().strip()
+        }
+        self.settings['login_info'] = login_info
         
         try:
             with open(self.settings_file, 'w', encoding='utf-8') as f:

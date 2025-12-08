@@ -89,4 +89,26 @@ class ConfigManager:
         settings = self.load_settings()
         settings[key] = value
         self.save_settings(settings)
+    
+    # LoginInfo 관리
+    def get_login_info(self) -> Dict[str, str]:
+        """로그인 정보 조회"""
+        settings = self.load_settings()
+        return settings.get('login_info', {})
+    
+    def get_teamcity_credentials(self) -> tuple:
+        """Teamcity 로그인 정보 조회 (ID, PW)"""
+        login_info = self.get_login_info()
+        teamcity_id = login_info.get('teamcity_id', '')
+        teamcity_pw = login_info.get('teamcity_pw', '')
+        return (teamcity_id, teamcity_pw)
+    
+    def set_teamcity_credentials(self, user_id: str, password: str) -> None:
+        """Teamcity 로그인 정보 저장"""
+        settings = self.load_settings()
+        if 'login_info' not in settings:
+            settings['login_info'] = {}
+        settings['login_info']['teamcity_id'] = user_id
+        settings['login_info']['teamcity_pw'] = password
+        self.save_settings(settings)
 
