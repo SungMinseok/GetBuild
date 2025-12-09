@@ -1229,12 +1229,12 @@ Branch: {branch}
         )
     
     def check_update(self):
-        """업데이트 확인"""
+        """업데이트 확인 (메뉴에서 수동 실행)"""
         if not self.auto_updater:
             QMessageBox.warning(self, "업데이트 오류", "업데이트 모듈을 불러올 수 없습니다.")
             return
         
-        self.log("업데이트 확인 중...")
+        self.log("🔍 서버에서 업데이트 확인 중...")
         
         # 동기적으로 업데이트 확인
         has_update, info, error_msg = self.auto_updater.check_updates_sync()
@@ -1427,15 +1427,42 @@ if __name__ == '__main__':
     main_window = QuickBuildApp()
     main_window.show()
     
-    # 앱 시작 시 자동 업데이트 확인 (비동기, 조용히)
+    # 앱 시작 시 자동 업데이트 확인 (비동기)
     if main_window.auto_updater:
-        def silent_update_callback(has_update, info, error_msg):
-            if has_update and info:
-                # 조용히 로그만 남김 (사용자가 메뉴에서 확인 가능)
-                main_window.log(f"새 버전 있음: {info['version']} (메뉴 > 업데이트 확인)")
+        def auto_update_callback(has_update, info, error_msg):
+            if error_msg:
+                # 오류 발생 시 로그에 기록 (팝업은 띄우지 않음)
+                main_window.log(f"⚠️ 업데이트 확인 실패: {error_msg}")
+            elif has_update and info:
+                # 새 버전 발견 시 로그에 기록하고 팝업 표시
+                main_window.log(f"✨ 새 버전 발견: {info['version']}")
+                
+                # 업데이트 확인 팝업 표시
+                version = info['version']
+                release_notes = info.get('release_notes', '변경 사항 없음')
+                
+                msg = f"새로운 버전이 있습니다!\n\n"
+                msg += f"현재 버전: {main_window.read_version()}\n"
+                msg += f"최신 버전: {version}\n\n"
+                msg += f"변경 사항:\n{release_notes[:300]}\n\n"
+                msg += "지금 업데이트 하시겠습니까?"
+                
+                reply = QMessageBox.question(
+                    main_window,
+                    "업데이트 가능",
+                    msg,
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                
+                if reply == QMessageBox.Yes:
+                    main_window.start_update_download()
+            else:
+                # 최신 버전 사용 중
+                main_window.log("✅ 현재 최신 버전을 사용 중입니다")
         
         # 비동기로 확인 (UI 블록 안 함)
-        main_window.auto_updater.check_updates_async(silent_update_callback)
+        main_window.log("🔍 서버에서 업데이트 확인 중...")
+        main_window.auto_updater.check_updates_async(auto_update_callback)
     
     sys.exit(app.exec_())
 

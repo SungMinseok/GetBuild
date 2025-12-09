@@ -852,29 +852,43 @@ ChromeDriver 버전: {chromedriver_version}
                 
                 print(f"[delete_server_container] AWS 페이지 이동: {aws_link}")
                 driver.get(aws_link)
-                driver.implicitly_wait(10)
+                
+                # 페이지 로드 대기 (추가)
+                time.sleep(2)
                 
                 try:
                     print("[delete_server_container] 로그인 확인 중...")
-                    driver.find_element(By.XPATH, '//*[@id="social-oidc"]').click()
+                    login_btn = driver.find_element(By.XPATH, '//*[@id="social-oidc"]')
+                    login_btn.click()
                     print("[delete_server_container] 로그인 버튼 클릭")
+                    # 로그인 리다이렉트 대기 (추가)
+                    time.sleep(3)
+                    print("[delete_server_container] 로그인 리다이렉트 대기 완료")
                 except:
                     print('[delete_server_container] 로그인 스킵 (이미 로그인됨)')
+            
+            # 페이지 완전 로드 대기 (추가)
+            print("[delete_server_container] 페이지 로딩 대기 중...")
+            time.sleep(2)
             
             driver.implicitly_wait(10)
             print("[delete_server_container] 삭제 작업 시작...")
             
-            wait = WebDriverWait(driver, 20)
+            # 대기 시간 증가: 20초 → 30초
+            wait = WebDriverWait(driver, 30)
             
             # CONTAINER GAMESERVERS 클릭
             try:
-                print("[delete_server_container] [단계 1/4] CONTAINER GAMESERVERS 탭 클릭")
+                print("[delete_server_container] [단계 1/4] CONTAINER GAMESERVERS 탭 대기 중...")
+                # 페이지 존재 확인 (presence) 후 클릭 가능(clickable) 대기
+                wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                print("[delete_server_container] [단계 1/4] 탭 요소 발견, 클릭 가능 대기 중...")
                 container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
                 container_tab.click()
-                time.sleep(0.5)
+                time.sleep(1)  # 0.5초 → 1초로 증가
                 print("[delete_server_container] [단계 1/4] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
             except TimeoutException as e:
-                raise Exception(f"[단계 1/4 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")
+                raise Exception(f"[단계 1/4 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다. 페이지가 완전히 로드되지 않았거나 로그인이 필요할 수 있습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")
             
             # Select all 버튼 클릭
             try:

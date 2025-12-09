@@ -175,6 +175,8 @@ a = Analysis(
         'makelog',
         'exporter',
         'updater',
+        'packaging',
+        'packaging.version',
     ],
     hookspath=['.'],
     hooksconfig={{}},
@@ -274,6 +276,17 @@ def run_pyinstaller(spec_file):
             print("  ⏭️  기존 EXE 파일을 사용합니다.")
             return True
     
+    # 실행 중인 프로세스 강제 종료
+    print("\n  🛑 실행 중인 QuickBuild.exe 프로세스 종료 중...")
+    try:
+        subprocess.run('taskkill /F /IM QuickBuild.exe', 
+                      shell=True, check=False, capture_output=True, timeout=5)
+        import time
+        time.sleep(2)  # 프로세스 종료 대기
+        print("  ✅ 프로세스 종료 완료")
+    except Exception as e:
+        print(f"  ⚠️  프로세스 종료 실패 (무시): {e}")
+    
     # 빌드 폴더 강제 삭제
     print("\n  🧹 빌드 디렉토리 정리 중...")
     for folder in ['build', 'dist']:
@@ -297,7 +310,6 @@ def run_pyinstaller(spec_file):
                 [
                     sys.executable,
                     '-m', 'PyInstaller',
-                    '--clean',
                     '--noconfirm',
                     spec_file
                 ],

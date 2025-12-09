@@ -63,8 +63,6 @@ class UpdateChecker:
     def check_for_updates(self) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         """업데이트 확인"""
         try:
-            self._log("서버에서 최신 버전 확인 중...")
-
             # QuickBuild GitHub Repository
             api_url = "https://api.github.com/repos/SungMinseok/GetBuild/releases/latest"
             response = requests.get(api_url, timeout=10)
@@ -72,9 +70,6 @@ class UpdateChecker:
 
             release_data = response.json()
             latest_version = release_data['tag_name'].lstrip('v')
-
-            self._log(f"현재 버전: {self.current_version}")
-            self._log(f"최신 버전: {latest_version}")
 
             # 버전 비교 (3.0-25.10.27.1635 형식)
             try:
@@ -99,10 +94,8 @@ class UpdateChecker:
                         'published_at': release_data.get('published_at', '')
                     }
 
-                    self._log(f"새로운 버전 발견: {latest_version}")
                     return True, update_info, None
                 else:
-                    self._log("현재 최신 버전을 사용 중입니다.")
                     return False, None, None
             except Exception as e:
                 self._log_error(f"버전 비교 오류: {e}")
@@ -383,18 +376,11 @@ class AutoUpdater:
         [동기적] 업데이트를 확인하고 결과를 반환합니다.
         메인 스레드에서 실행되어야 하며, GUI를 잠시 멈출 수 있습니다.
         """
-        self._log("[동기] 서버에서 업데이트 확인 시작...")
-        
         try:
             has_update, info, error_msg = self.checker.check_for_updates()
             
             self.update_available = has_update
             self.latest_info = info
-            
-            if has_update:
-                self._log(f"[동기] 새 버전 발견: {info['version']}")
-            else:
-                self._log("[동기] 현재 최신 버전입니다.")
                 
             return has_update, info, error_msg
             
