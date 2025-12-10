@@ -4,7 +4,7 @@ import os
 import shutil
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QScrollArea, QLabel, QMessageBox, QTextEdit,
-                             QMenuBar, QAction, QSplitter, QFrame, QProgressDialog)
+                             QMenuBar, QAction, QSplitter, QFrame, QProgressDialog, QLineEdit)
 from PyQt5.QtCore import Qt, QTimer, QTime
 from PyQt5.QtGui import QIcon
 from datetime import datetime
@@ -180,7 +180,7 @@ class QuickBuildApp(QMainWindow):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(5)
         
-        # 헤더
+        # 헤더 (첫 번째 줄)
         header = QFrame()
         header.setFrameShape(QFrame.StyledPanel)
         header.setFixedHeight(40)
@@ -244,6 +244,70 @@ class QuickBuildApp(QMainWindow):
         
         header.setLayout(layout)
         container_layout.addWidget(header)
+        
+        # 검색 영역 (두 번째 줄)
+        search_frame = QFrame()
+        search_frame.setFrameShape(QFrame.StyledPanel)
+        search_frame.setFixedHeight(45)
+        
+        search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # 검색 아이콘 라벨
+        search_icon_label = QLabel("🔍")
+        search_icon_label.setStyleSheet("font-size: 14pt;")
+        search_layout.addWidget(search_icon_label)
+        
+        # 검색창
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("스케줄 이름으로 검색... (실시간 필터링)")
+        self.search_input.setFixedHeight(30)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                padding: 5px 10px;
+                border: 2px solid #BDBDBD;
+                border-radius: 5px;
+                font-size: 10pt;
+                background-color: white;
+            }
+            QLineEdit:focus {
+                border: 2px solid #2196F3;
+            }
+        """)
+        # 텍스트 변경 시 실시간 필터링
+        self.search_input.textChanged.connect(self.filter_schedules)
+        search_layout.addWidget(self.search_input, 1)
+        
+        # 검색 결과 카운트
+        self.search_result_label = QLabel("")
+        self.search_result_label.setStyleSheet("""
+            color: #757575;
+            font-size: 9pt;
+            padding: 0 10px;
+        """)
+        search_layout.addWidget(self.search_result_label)
+        
+        # 초기화 버튼
+        clear_btn = QPushButton("✖ 초기화")
+        clear_btn.setFixedSize(80, 30)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9E9E9E;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 9pt;
+            }
+            QPushButton:hover {
+                background-color: #757575;
+            }
+        """)
+        clear_btn.clicked.connect(self.clear_search)
+        search_layout.addWidget(clear_btn)
+        
+        search_frame.setLayout(search_layout)
+        container_layout.addWidget(search_frame)
+        
         container.setLayout(container_layout)
         return container
     
@@ -347,6 +411,49 @@ class QuickBuildApp(QMainWindow):
         
         self.schedule_layout.addStretch()
         self.log(f"스케줄 목록 갱신 완료 ({len(schedules)}개)")
+        
+        # 검색어가 있으면 필터링 적용
+        if hasattr(self, 'search_input') and self.search_input.text():
+            self.filter_schedules(self.search_input.text())
+    
+    def filter_schedules(self, search_text: str):
+        """스케줄 실시간 필터링"""
+        search_text = search_text.strip().lower()
+        
+        visible_count = 0
+        total_count = 0
+        
+        # 모든 스케줄 위젯 순회
+        for i in range(self.schedule_layout.count()):
+            item = self.schedule_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                
+                # ScheduleItemWidget만 필터링
+                if isinstance(widget, ScheduleItemWidget):
+                    total_count += 1
+                    schedule_name = widget.schedule.get('name', '').lower()
+                    
+                    # 검색어가 비어있거나, 이름에 포함되어 있으면 표시
+                    if not search_text or search_text in schedule_name:
+                        widget.setVisible(True)
+                        visible_count += 1
+                    else:
+                        widget.setVisible(False)
+        
+        # 검색 결과 표시
+        if search_text:
+            self.search_result_label.setText(f"{visible_count}/{total_count}개 표시")
+            if visible_count == 0:
+                self.log(f"🔍 검색 결과 없음: '{search_text}'")
+        else:
+            self.search_result_label.setText("")
+    
+    def clear_search(self):
+        """검색 초기화"""
+        self.search_input.clear()
+        self.search_result_label.setText("")
+        self.log("🔍 검색 필터 초기화")
     
     def create_new_schedule(self):
         """새 스케줄 생성"""
