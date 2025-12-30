@@ -64,3 +64,5 @@ hook.json
 142
 141
 all_commits_with_diff.txt
+slack_tokens.json
+slack_tokens.json.example

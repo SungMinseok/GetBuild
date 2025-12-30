@@ -4,8 +4,8 @@ import os
 import shutil
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QScrollArea, QLabel, QMessageBox, QTextEdit,
-                             QMenuBar, QAction, QSplitter, QFrame, QProgressDialog, QLineEdit)
-from PyQt5.QtCore import Qt, QTimer, QTime
+                             QMenuBar, QAction, QSplitter, QFrame, QProgressDialog, QLineEdit, QComboBox, QDialog)
+from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal
 from PyQt5.QtGui import QIcon
 from datetime import datetime
 import subprocess
@@ -29,8 +29,12 @@ from slack import send_schedule_notification
 # 업데이트 모듈 import
 try:
     from updater import AutoUpdater
+    from update_dialogs import UpdateNotificationDialog, DownloadProgressDialog, AboutDialog
 except ImportError:
     AutoUpdater = None
+    UpdateNotificationDialog = None
+    DownloadProgressDialog = None
+    AboutDialog = None
 # Qt 플랫폼 플러그인 경로 설정 (PyQt5 import 전에 설정 필요)
 if hasattr(sys, '_MEIPASS'):
     # PyInstaller로 빌드된 실행 파일인 경우
@@ -45,6 +49,9 @@ os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.join(qt_plugin_path, 'platfo
 
 class QuickBuildApp(QMainWindow):
     """QuickBuild 메인 애플리케이션 (스케줄 중심)"""
+    
+    # 업데이트 시그널
+    update_check_result = pyqtSignal(bool, object, str)  # has_update, info, error_msg
     
     def __init__(self):
         super().__init__()
@@ -72,6 +79,8 @@ class QuickBuildApp(QMainWindow):
         self.auto_updater = AutoUpdater() if AutoUpdater else None
         if self.auto_updater:
             self.auto_updater.set_main_app(self)
+            # 시그널 연결
+            self.update_check_result.connect(self.on_update_check_result)
         
         # Debug 모드 플래그
         self.debug_mode = self.load_debug_mode()
@@ -96,6 +105,10 @@ class QuickBuildApp(QMainWindow):
         
         # ChromeDriver 최초 설치 확인 (비동기)
         QTimer.singleShot(500, self.check_chromedriver_on_startup)
+        
+        # 앱 시작 3초 후 업데이트 체크 (백그라운드)
+        if self.auto_updater:
+            QTimer.singleShot(3000, self.check_for_updates_on_startup)
     
     def init_ui(self):
         """UI 초기화"""
@@ -275,8 +288,52 @@ class QuickBuildApp(QMainWindow):
             }
         """)
         # 텍스트 변경 시 실시간 필터링
-        self.search_input.textChanged.connect(self.filter_schedules)
+        self.search_input.textChanged.connect(self.apply_filters)
         search_layout.addWidget(self.search_input, 1)
+        
+        # 실행 옵션 필터
+        self.option_filter_combo = QComboBox()
+        self.option_filter_combo.setFixedHeight(30)
+        self.option_filter_combo.setFixedWidth(180)
+        self.option_filter_combo.setStyleSheet("""
+            QComboBox {
+                padding: 5px 10px;
+                border: 2px solid #BDBDBD;
+                border-radius: 5px;
+                font-size: 10pt;
+                background-color: white;
+            }
+            QComboBox:focus {
+                border: 2px solid #2196F3;
+            }
+        """)
+        self.option_filter_combo.addItem("모든 옵션", "")
+        for option in self.execution_options:
+            self.option_filter_combo.addItem(option, option)
+        self.option_filter_combo.currentIndexChanged.connect(self.apply_filters)
+        search_layout.addWidget(self.option_filter_combo)
+        
+        # 활성화 여부 필터
+        self.enabled_filter_combo = QComboBox()
+        self.enabled_filter_combo.setFixedHeight(30)
+        self.enabled_filter_combo.setFixedWidth(120)
+        self.enabled_filter_combo.setStyleSheet("""
+            QComboBox {
+                padding: 5px 10px;
+                border: 2px solid #BDBDBD;
+                border-radius: 5px;
+                font-size: 10pt;
+                background-color: white;
+            }
+            QComboBox:focus {
+                border: 2px solid #2196F3;
+            }
+        """)
+        self.enabled_filter_combo.addItem("전체", "all")
+        self.enabled_filter_combo.addItem("활성화", "enabled")
+        self.enabled_filter_combo.addItem("비활성화", "disabled")
+        self.enabled_filter_combo.currentIndexChanged.connect(self.apply_filters)
+        search_layout.addWidget(self.enabled_filter_combo)
         
         # 검색 결과 카운트
         self.search_result_label = QLabel("")
@@ -302,7 +359,7 @@ class QuickBuildApp(QMainWindow):
                 background-color: #757575;
             }
         """)
-        clear_btn.clicked.connect(self.clear_search)
+        clear_btn.clicked.connect(self.clear_filters)
         search_layout.addWidget(clear_btn)
         
         search_frame.setLayout(search_layout)
@@ -412,13 +469,23 @@ class QuickBuildApp(QMainWindow):
         self.schedule_layout.addStretch()
         self.log(f"스케줄 목록 갱신 완료 ({len(schedules)}개)")
         
-        # 검색어가 있으면 필터링 적용
-        if hasattr(self, 'search_input') and self.search_input.text():
-            self.filter_schedules(self.search_input.text())
+        # 필터가 있으면 필터링 적용
+        if hasattr(self, 'search_input'):
+            self.apply_filters()
     
-    def filter_schedules(self, search_text: str):
-        """스케줄 실시간 필터링"""
-        search_text = search_text.strip().lower()
+    def apply_filters(self):
+        """스케줄 필터링 (이름, 실행 옵션, 활성화 여부)"""
+        search_text = self.search_input.text().strip().lower() if hasattr(self, 'search_input') else ""
+        
+        # 실행 옵션 필터
+        option_filter = ""
+        if hasattr(self, 'option_filter_combo'):
+            option_filter = self.option_filter_combo.currentData()
+        
+        # 활성화 여부 필터
+        enabled_filter = "all"
+        if hasattr(self, 'enabled_filter_combo'):
+            enabled_filter = self.enabled_filter_combo.currentData()
         
         visible_count = 0
         total_count = 0
@@ -432,28 +499,57 @@ class QuickBuildApp(QMainWindow):
                 # ScheduleItemWidget만 필터링
                 if isinstance(widget, ScheduleItemWidget):
                     total_count += 1
-                    schedule_name = widget.schedule.get('name', '').lower()
                     
-                    # 검색어가 비어있거나, 이름에 포함되어 있으면 표시
-                    if not search_text or search_text in schedule_name:
+                    # 각 필터 조건 확인
+                    schedule_name = widget.schedule.get('name', '').lower()
+                    schedule_option = widget.schedule.get('option', '')
+                    schedule_enabled = widget.schedule.get('enabled', True)
+                    
+                    # 이름 필터
+                    name_match = not search_text or search_text in schedule_name
+                    
+                    # 실행 옵션 필터
+                    option_match = not option_filter or schedule_option == option_filter
+                    
+                    # 활성화 여부 필터
+                    if enabled_filter == "all":
+                        enabled_match = True
+                    elif enabled_filter == "enabled":
+                        enabled_match = schedule_enabled == True
+                    elif enabled_filter == "disabled":
+                        enabled_match = schedule_enabled == False
+                    else:
+                        enabled_match = True
+                    
+                    # 모든 조건이 만족되면 표시
+                    if name_match and option_match and enabled_match:
                         widget.setVisible(True)
                         visible_count += 1
                     else:
                         widget.setVisible(False)
         
         # 검색 결과 표시
-        if search_text:
+        if search_text or option_filter or enabled_filter != "all":
             self.search_result_label.setText(f"{visible_count}/{total_count}개 표시")
             if visible_count == 0:
-                self.log(f"🔍 검색 결과 없음: '{search_text}'")
+                filter_desc = []
+                if search_text:
+                    filter_desc.append(f"이름:'{search_text}'")
+                if option_filter:
+                    filter_desc.append(f"옵션:'{option_filter}'")
+                if enabled_filter != "all":
+                    filter_desc.append(f"상태:'{enabled_filter}'")
+                self.log(f"🔍 필터 결과 없음: {', '.join(filter_desc)}")
         else:
             self.search_result_label.setText("")
     
-    def clear_search(self):
-        """검색 초기화"""
+    def clear_filters(self):
+        """모든 필터 초기화"""
         self.search_input.clear()
+        self.option_filter_combo.setCurrentIndex(0)
+        self.enabled_filter_combo.setCurrentIndex(0)
         self.search_result_label.setText("")
-        self.log("🔍 검색 필터 초기화")
+        self.log("🔍 모든 필터 초기화")
     
     def create_new_schedule(self):
         """새 스케줄 생성"""
@@ -1310,16 +1406,16 @@ Branch: {branch}
             import json
             with open("version.json", "r", encoding="utf-8") as f:
                 version_data = json.load(f)
-            return version_data.get('version', '3.0-25.10.26.1805')
+            return version_data.get('version', '3.0.0')
         except FileNotFoundError:
             # version.json이 없으면 version.txt 시도 (하위 호환성)
             try:
                 with open("version.txt", "r", encoding="utf-8") as f:
                     return f.read().strip()
             except:
-                return "3.0-25.10.26.1805"
+                return "3.0.0"
         except:
-            return "3.0-25.10.26.1805"
+            return "3.0.0"
     
     def is_running_from_python(self) -> bool:
         """Python 스크립트로 실행 중인지 확인 (개발 모드)"""
@@ -1329,14 +1425,22 @@ Branch: {branch}
     
     def show_about(self):
         """About 다이얼로그"""
-        QMessageBox.information(
-            self,
-            "About QuickBuild",
-            f"QuickBuild v2\nVersion: {self.read_version()}\n\n스케줄 기반 빌드 관리 도구"
-        )
+        if AboutDialog:
+            dialog = AboutDialog(self)
+            dialog.exec_()
+        else:
+            QMessageBox.information(
+                self,
+                "About QuickBuild",
+                f"QuickBuild v2\nVersion: {self.read_version()}\n\n스케줄 기반 빌드 관리 도구"
+            )
     
     def check_update(self):
-        """업데이트 확인 (메뉴에서 수동 실행)"""
+        """업데이트 확인 (메뉴에서 수동 실행) - check_for_updates로 리다이렉트"""
+        self.check_for_updates()
+    
+    def check_for_updates(self):
+        """업데이트 확인 (메뉴 또는 About에서 호출)"""
         if not self.auto_updater:
             QMessageBox.warning(self, "업데이트 오류", "업데이트 모듈을 불러올 수 없습니다.")
             return
@@ -1351,61 +1455,137 @@ Branch: {branch}
             return
         
         if not has_update:
-            QMessageBox.information(self, "업데이트", "현재 최신 버전을 사용 중입니다.")
+            QMessageBox.information(self, "최신 버전", "현재 최신 버전을 사용 중입니다.")
             return
         
-        # 업데이트 다이얼로그 표시
-        version = info['version']
-        release_notes = info.get('release_notes', '변경 사항 없음')
-        
-        msg = f"새로운 버전이 있습니다!\n\n"
-        msg += f"현재 버전: {self.read_version()}\n"
-        msg += f"최신 버전: {version}\n\n"
-        msg += f"변경 사항:\n{release_notes[:300]}\n\n"
-        msg += "지금 업데이트 하시겠습니까?"
-        
-        reply = QMessageBox.question(
-            self,
-            "업데이트 가능",
-            msg,
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            self.start_update_download()
+        # 새로운 업데이트 알림 다이얼로그 표시
+        self._show_update_notification(info)
     
-    def start_update_download(self):
+    def check_for_updates_on_startup(self):
+        """앱 시작 시 백그라운드에서 업데이트 확인"""
+        def callback(has_update, info, error_msg):
+            # 메인 스레드로 결과 전달
+            self.update_check_result.emit(has_update, info, error_msg or "")
+        
+        # 동기 방식으로 체크
+        has_update, info, error_msg = self.auto_updater.check_updates_sync()
+        callback(has_update, info, error_msg)
+    
+    def on_update_check_result(self, has_update, info, error_msg):
+        """업데이트 체크 결과 처리 (메인 스레드)"""
+        if error_msg:
+            self.log(f"⚠️ 업데이트 확인 실패: {error_msg}")
+            return
+        
+        if has_update:
+            self.log(f"🎉 새 버전 발견: {info['version']}")
+            # 업데이트 알림 다이얼로그 표시
+            self._show_update_notification(info)
+        else:
+            self.log("✅ 현재 최신 버전을 사용 중입니다")
+    
+    def _show_update_notification(self, info):
+        """업데이트 알림 다이얼로그 표시"""
+        if not UpdateNotificationDialog:
+            # 다이얼로그 모듈이 없으면 기본 메시지박스 사용
+            version = info['version']
+            release_notes = info.get('release_notes', '변경 사항 없음')
+            
+            msg = f"새로운 버전이 있습니다!\n\n"
+            msg += f"현재 버전: {self.read_version()}\n"
+            msg += f"최신 버전: {version}\n\n"
+            msg += f"변경 사항:\n{release_notes[:300]}\n\n"
+            msg += "지금 업데이트 하시겠습니까?"
+            
+            reply = QMessageBox.question(
+                self,
+                "업데이트 가능",
+                msg,
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self.start_update_download(info)
+            return
+        
+        # 새로운 업데이트 알림 다이얼로그 사용
+        dialog = UpdateNotificationDialog(info, self)
+        result = dialog.exec_()
+        
+        if result == QDialog.Accepted:  # 지금 업데이트
+            self.log(f"업데이트 시작: {info['version']}")
+            self.start_update_download(info)
+        elif result == 2:  # 건너뛰기
+            self.log(f"버전 {info['version']} 건너뛰기")
+            # TODO: 건너뛴 버전 설정 파일에 저장
+        else:  # 나중에
+            self.log("업데이트 나중에 하기")
+    
+    def start_update_download(self, info):
         """업데이트 다운로드 시작"""
         if not self.auto_updater:
             return
         
-        # 프로그레스 다이얼로그 생성
-        progress_dialog = QProgressDialog("업데이트 다운로드 중...", "취소", 0, 100, self)
-        progress_dialog.setWindowTitle("업데이트")
-        progress_dialog.setWindowModality(Qt.WindowModal)
-        progress_dialog.setMinimumDuration(0)
-        progress_dialog.setValue(0)
-        
-        def progress_callback(received, total):
-            if total > 0:
-                percent = int((received / total) * 100)
-                progress_dialog.setValue(percent)
-                progress_dialog.setLabelText(
-                    f"업데이트 다운로드 중...\n{received / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB"
-                )
-        
-        def completion_callback(success):
-            progress_dialog.close()
-            if not success:
-                QMessageBox.critical(self, "업데이트 실패", "업데이트 다운로드 또는 설치에 실패했습니다.")
-        
-        # 취소 버튼 연결
-        progress_dialog.canceled.connect(self.auto_updater.downloader.cancel)
-        
-        # 다운로드 및 설치 시작 (비동기)
-        self.auto_updater.download_and_install(progress_callback, completion_callback)
-        
-        progress_dialog.exec_()
+        # 새로운 진행률 다이얼로그 사용
+        if DownloadProgressDialog:
+            self.download_dialog = DownloadProgressDialog(self)
+            
+            def progress_callback(received, total):
+                """다운로드 진행률 업데이트"""
+                self.download_dialog.update_progress(received, total)
+            
+            def completion_callback(success):
+                """다운로드/설치 완료 콜백"""
+                if success:
+                    self.log("✅ 업데이트 설치 완료")
+                    # 배치 스크립트가 재시작 처리 (여기까지 오지 않음)
+                else:
+                    self.log("❌ 업데이트 실패")
+                    self.download_dialog.reject()
+                    QMessageBox.critical(
+                        self,
+                        "업데이트 실패",
+                        "업데이트 설치 중 오류가 발생했습니다."
+                    )
+            
+            # 다운로드 시작 (비동기)
+            self.auto_updater.download_and_install(progress_callback, completion_callback)
+            
+            # 진행률 다이얼로그 표시 (모달)
+            result = self.download_dialog.exec_()
+            
+            if result == QDialog.Rejected and self.download_dialog.cancelled:
+                # 사용자가 취소
+                self.auto_updater.downloader.cancel()
+                self.log("업데이트 취소됨")
+        else:
+            # 기본 프로그레스 다이얼로그 사용
+            progress_dialog = QProgressDialog("업데이트 다운로드 중...", "취소", 0, 100, self)
+            progress_dialog.setWindowTitle("업데이트")
+            progress_dialog.setWindowModality(Qt.WindowModal)
+            progress_dialog.setMinimumDuration(0)
+            progress_dialog.setValue(0)
+            
+            def progress_callback(received, total):
+                if total > 0:
+                    percent = int((received / total) * 100)
+                    progress_dialog.setValue(percent)
+                    progress_dialog.setLabelText(
+                        f"업데이트 다운로드 중...\n{received / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB"
+                    )
+            
+            def completion_callback(success):
+                progress_dialog.close()
+                if not success:
+                    QMessageBox.critical(self, "업데이트 실패", "업데이트 다운로드 또는 설치에 실패했습니다.")
+            
+            # 취소 버튼 연결
+            progress_dialog.canceled.connect(self.auto_updater.downloader.cancel)
+            
+            # 다운로드 및 설치 시작 (비동기)
+            self.auto_updater.download_and_install(progress_callback, completion_callback)
+            
+            progress_dialog.exec_()
     
     def show_settings(self):
         """설정 다이얼로그 표시"""
@@ -1534,42 +1714,7 @@ if __name__ == '__main__':
     main_window = QuickBuildApp()
     main_window.show()
     
-    # 앱 시작 시 자동 업데이트 확인 (비동기)
-    if main_window.auto_updater:
-        def auto_update_callback(has_update, info, error_msg):
-            if error_msg:
-                # 오류 발생 시 로그에 기록 (팝업은 띄우지 않음)
-                main_window.log(f"⚠️ 업데이트 확인 실패: {error_msg}")
-            elif has_update and info:
-                # 새 버전 발견 시 로그에 기록하고 팝업 표시
-                main_window.log(f"✨ 새 버전 발견: {info['version']}")
-                
-                # 업데이트 확인 팝업 표시
-                version = info['version']
-                release_notes = info.get('release_notes', '변경 사항 없음')
-                
-                msg = f"새로운 버전이 있습니다!\n\n"
-                msg += f"현재 버전: {main_window.read_version()}\n"
-                msg += f"최신 버전: {version}\n\n"
-                msg += f"변경 사항:\n{release_notes[:300]}\n\n"
-                msg += "지금 업데이트 하시겠습니까?"
-                
-                reply = QMessageBox.question(
-                    main_window,
-                    "업데이트 가능",
-                    msg,
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                
-                if reply == QMessageBox.Yes:
-                    main_window.start_update_download()
-            else:
-                # 최신 버전 사용 중
-                main_window.log("✅ 현재 최신 버전을 사용 중입니다")
-        
-        # 비동기로 확인 (UI 블록 안 함)
-        main_window.log("🔍 서버에서 업데이트 확인 중...")
-        main_window.auto_updater.check_updates_async(auto_update_callback)
+    # 앱 시작 시 자동 업데이트 확인은 __init__에서 QTimer로 처리됨
     
     sys.exit(app.exec_())
 

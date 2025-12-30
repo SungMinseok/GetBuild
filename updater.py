@@ -2,10 +2,10 @@
 QuickBuild 자동 업데이트 시스템
 GitHub Releases를 통한 버전 체크 및 업데이트
 
-정석 방식:
+프로세스:
 1. 버전 체크 (GitHub API)
 2. 다운로드 (앱 폴더)
-3. 압축 해제 (앱 폴더)
+3. 압축 해제 (임시 폴더)
 4. 배치 스크립트로 파일 교체
 5. 앱 재시작
 
@@ -17,7 +17,6 @@ import json
 import os
 import sys
 import requests
-import subprocess
 import shutil
 import zipfile
 from typing import Optional, Dict, Any, Tuple

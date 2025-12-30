@@ -91,6 +91,39 @@ class AWSManager:
             return False
     
     @staticmethod
+    def wait_for_teamcity_page_ready(driver, url_link: str, timeout: int = 30):
+        """
+        TeamCity 페이지 이동/리다이렉트 이후, 실제 페이지가 로드되었는지 확인.
+        - driver가 이미 존재하는 경우에도 url 이동이 누락되어 다음 단계로 넘어가는 문제를 방지한다.
+        """
+        expected_base = url_link.split('#')[0].split('?')[0].rstrip('/')
+        wait = WebDriverWait(driver, timeout)
+
+        # URL이 기대하는 base로 이동했는지(혹은 그 하위로) 확인
+        try:
+            wait.until(lambda d: expected_base in (d.current_url or ""))
+        except TimeoutException:
+            raise Exception(
+                f"[빌드굽기] ❌ URL 이동 실패: {expected_base} 로 이동하지 못했습니다. 현재 URL: {driver.current_url}"
+            )
+
+        # 문서 로드 완료 확인
+        try:
+            wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+        except TimeoutException:
+            raise Exception(
+                f"[빌드굽기] ❌ 페이지 로딩 완료 대기 실패(document.readyState). 현재 URL: {driver.current_url}"
+            )
+
+        # TeamCity 빌드 페이지의 핵심 컨테이너가 존재하는지 확인
+        try:
+            wait.until(EC.presence_of_element_located((By.ID, "main-content-tag")))
+        except TimeoutException:
+            raise Exception(
+                f"[빌드굽기] ❌ TeamCity 빌드 페이지 확인 실패(main-content-tag). 현재 URL: {driver.current_url}"
+            )
+
+    @staticmethod
     def get_base_path():
         """실행 파일 기준 경로 반환"""
         if getattr(sys, 'frozen', False):
@@ -310,6 +343,44 @@ class AWSManager:
         return None
     
     @staticmethod
+    def cleanup_chrome_processes():
+        """Chrome 및 ChromeDriver 프로세스 모두 종료"""
+        print("[cleanup_chrome_processes] 모든 Chrome 및 ChromeDriver 프로세스 종료 중...")
+        
+        # Chrome 프로세스 종료
+        try:
+            result = subprocess.run('taskkill /F /IM chrome.exe /T', 
+                                  shell=True, 
+                                  capture_output=True, 
+                                  text=True,
+                                  timeout=5)
+            if result.returncode == 0:
+                print("[cleanup_chrome_processes] ✅ Chrome 프로세스 종료 완료")
+            else:
+                print("[cleanup_chrome_processes] Chrome 프로세스가 실행 중이지 않음")
+        except Exception as e:
+            print(f"[cleanup_chrome_processes] Chrome 종료 중 오류 (무시): {e}")
+        
+        # ChromeDriver 프로세스 종료
+        try:
+            result = subprocess.run('taskkill /F /IM chromedriver.exe /T', 
+                                  shell=True, 
+                                  capture_output=True, 
+                                  text=True,
+                                  timeout=5)
+            if result.returncode == 0:
+                print("[cleanup_chrome_processes] ✅ ChromeDriver 프로세스 종료 완료")
+            else:
+                print("[cleanup_chrome_processes] ChromeDriver 프로세스가 실행 중이지 않음")
+        except Exception as e:
+            print(f"[cleanup_chrome_processes] ChromeDriver 종료 중 오류 (무시): {e}")
+        
+        # 프로세스 완전 종료 대기
+        print("[cleanup_chrome_processes] 프로세스 종료 대기 중 (3초)...")
+        time.sleep(3)
+        print("[cleanup_chrome_processes] ✅ 정리 완료")
+    
+    @staticmethod
     def start_driver():
         """Chrome 디버깅 모드 드라이버 시작"""
         chrome_debugging_address = "http://127.0.0.1:9222/json"
@@ -479,6 +550,10 @@ ChromeDriver 버전: {chromedriver_version}
         try:
             if driver is None:
                 print("[서버업로드] ChromeDriver 시작 중...")
+                
+                # 기존 Chrome 및 ChromeDriver 프로세스 정리
+                AWSManager.cleanup_chrome_processes()
+                
                 try:
                     driver = AWSManager.start_driver()
                 except Exception as e:
@@ -487,11 +562,8 @@ ChromeDriver 버전: {chromedriver_version}
                     print(f"[서버업로드] 오류: {e}")
                     time.sleep(5)
                     
-                    # 모든 Chrome/ChromeDriver 프로세스 강제 종료
-                    print("[서버업로드] 모든 Chrome 프로세스 강제 종료 중...")
-                    os.system('taskkill /F /IM chrome.exe /T 2>nul')
-                    os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
-                    time.sleep(3)
+                    # 모든 Chrome/ChromeDriver 프로세스 강제 종료 (재시도)
+                    AWSManager.cleanup_chrome_processes()
                     
                     # 재시도
                     print("[서버업로드] ChromeDriver 재시작 시도...")
@@ -625,6 +697,10 @@ ChromeDriver 버전: {chromedriver_version}
             
             if driver is None:
                 print("[update_server_container] ChromeDriver 시작 중...")
+                
+                # 기존 Chrome 및 ChromeDriver 프로세스 정리
+                AWSManager.cleanup_chrome_processes()
+                
                 try:
                     driver = AWSManager.start_driver()
                 except Exception as e:
@@ -633,11 +709,8 @@ ChromeDriver 버전: {chromedriver_version}
                     print(f"[update_server_container] 오류: {e}")
                     time.sleep(5)
                     
-                    # 모든 Chrome/ChromeDriver 프로세스 강제 종료
-                    print("[update_server_container] 모든 Chrome 프로세스 강제 종료 중...")
-                    os.system('taskkill /F /IM chrome.exe /T 2>nul')
-                    os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
-                    time.sleep(3)
+                    # 모든 Chrome/ChromeDriver 프로세스 강제 종료 (재시도)
+                    AWSManager.cleanup_chrome_processes()
                     
                     # 재시도
                     print("[update_server_container] ChromeDriver 재시작 시도...")
@@ -847,6 +920,10 @@ ChromeDriver 버전: {chromedriver_version}
             
             if driver is None:
                 print("[delete_server_container] 드라이버 시작 중...")
+                
+                # 기존 Chrome 및 ChromeDriver 프로세스 정리
+                AWSManager.cleanup_chrome_processes()
+                
                 driver = AWSManager.start_driver()
                 driver.implicitly_wait(10)
                 
@@ -941,14 +1018,22 @@ ChromeDriver 버전: {chromedriver_version}
         try:
             if driver is None:
                 print("[빌드굽기] 드라이버 시작 중...")
+                
+                # 기존 Chrome 및 ChromeDriver 프로세스 정리
+                AWSManager.cleanup_chrome_processes()
+                
                 driver = AWSManager.start_driver()
                 driver.implicitly_wait(10)
-                print(f"[빌드굽기] TeamCity 페이지 이동: {url_link}")
-                driver.get(url_link)
-                time.sleep(2)
-                
-                # 자동 로그인 시도
-                AWSManager.teamcity_auto_login(driver, teamcity_id, teamcity_pw)
+            
+            # driver가 이미 존재해도 항상 목표 URL로 이동하고, 로드 완료를 확인한다.
+            print(f"[빌드굽기] TeamCity 페이지 이동: {url_link}")
+            driver.get(url_link)
+            AWSManager.wait_for_teamcity_page_ready(driver, url_link, timeout=30)
+
+            # 자동 로그인 시도 (리다이렉트가 발생할 수 있으므로 이후에도 로드 완료를 다시 확인)
+            AWSManager.teamcity_auto_login(driver, teamcity_id, teamcity_pw)
+            driver.get(url_link)
+            AWSManager.wait_for_teamcity_page_ready(driver, url_link, timeout=30)
             
             wait = WebDriverWait(driver, 20)
             
@@ -987,8 +1072,11 @@ ChromeDriver 버전: {chromedriver_version}
             
             try:
                 print("[빌드굽기] [단계 3/9] moveToTop 클릭")
-                move_top = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="moveToTop"]')))
-                move_top.click()
+                # time.sleep(0.5)
+                # move_top = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[2]/div[4]/div[1]/div/div[5]/form[2]/div/div[2]/div[1]/div[2]/div[1]/table/tbody/tr[4]/td/span/input[1]')))
+                # move_top.click()
+                
+                driver.find_element(By.XPATH,'//*[@id="moveToTop"]').click()
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 3/9] ✅ moveToTop 클릭 완료")
             except TimeoutException:
@@ -1038,17 +1126,19 @@ ChromeDriver 버전: {chromedriver_version}
             # 옵션 설정
             try:
                 print("[빌드굽기] [단계 8/9] 빌드 옵션 설정")
-                option1 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_2"]')))
-                option1.click()
+                # option1 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]')))
+                # option1.click()
+                driver.find_element(By.XPATH,'//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]').click()
                 time.sleep(0.3)
                 
-                option2 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]')))
-                option2.click()
+                # option2 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="parameter_build_docker_2083990112"]')))
+                # option2.click()
+                driver.find_element(By.XPATH,'//*[@id="parameter_build_docker_2083990112"]').click()
                 time.sleep(0.5)
                 
-                docker_option = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="parameter_build_docker_2083990112"]')))
-                docker_option.click()
-                time.sleep(0.5)
+                # docker_option = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="parameter_build_docker_2083990112"]')))
+                # docker_option.click()
+                # time.sleep(0.5)
                 print("[빌드굽기] [단계 8/9] ✅ 빌드 옵션 설정 완료")
             except TimeoutException:
                 raise Exception(f"[단계 8/9 실패] 빌드 옵션 설정 요소를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다.")

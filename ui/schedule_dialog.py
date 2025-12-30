@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List
 import json
 import os
 from datetime import datetime
+from ui.slack_token_dialog import AddSlackItemDialog, SlackTokenManager
 
 
 class ScheduleDialog(QDialog):
@@ -303,28 +304,66 @@ class ScheduleDialog(QDialog):
         self.webhook_label.setVisible(False)
         # layout.addRow은 아래에서 처리
         
-        # Bot Token 입력 (단독 알림 및 스레드 댓글 모두 사용)
-        self.bot_token_edit = QLineEdit()
-        self.bot_token_edit.setPlaceholderText("xoxb-xxxxx... (필수)")
-        self.bot_token_edit.setEnabled(False)
-        #self.bot_token_edit.setEchoMode(QLineEdit.Password)
-        layout.addRow("Bot Token:", self.bot_token_edit)
+        # Bot Token 선택 (드롭다운 + 코드 표시 + 추가 버튼)
+        bot_token_layout = QHBoxLayout()
         
-        # 채널 ID 입력 (단독 알림 및 스레드 댓글 모두 사용)
-        self.channel_id_edit = QLineEdit()
-        self.channel_id_edit.setPlaceholderText("C0XXXXXXX (공개채널) 또는 G0XXXXXXX (비공개)")
-        self.channel_id_edit.setEnabled(False)
-        self.channel_id_edit.setToolTip(
+        # Bot Token 드롭다운
+        self.bot_token_combo = QComboBox()
+        self.bot_token_combo.setEnabled(False)
+        self.bot_token_combo.currentTextChanged.connect(self.on_bot_token_changed)
+        bot_token_layout.addWidget(self.bot_token_combo, stretch=2)
+        
+        # Bot Token 코드 표시 (읽기 전용)
+        self.bot_token_display = QLineEdit()
+        self.bot_token_display.setEnabled(False)
+        self.bot_token_display.setReadOnly(True)
+        self.bot_token_display.setPlaceholderText("토큰 코드")
+        bot_token_layout.addWidget(self.bot_token_display, stretch=3)
+        
+        # Bot Token 추가 버튼
+        add_bot_token_btn = QPushButton("+")
+        add_bot_token_btn.setFixedWidth(30)
+        add_bot_token_btn.setToolTip("새 Bot Token 추가")
+        add_bot_token_btn.clicked.connect(self.add_bot_token)
+        bot_token_layout.addWidget(add_bot_token_btn)
+        
+        layout.addRow("Bot Token:", bot_token_layout)
+        
+        # 채널 ID 선택 (드롭다운 + 코드 표시 + 추가 버튼)
+        channel_id_layout = QHBoxLayout()
+        
+        # 채널 ID 드롭다운
+        self.channel_id_combo = QComboBox()
+        self.channel_id_combo.setEnabled(False)
+        self.channel_id_combo.currentTextChanged.connect(self.on_channel_id_changed)
+        self.channel_id_combo.setToolTip(
             "채널 ID 찾는 방법:\n"
             "1. Slack 채널 클릭\n"
             "2. 오른쪽 상단 ⋮ 메뉴\n"
             "3. '채널 세부정보 보기'\n"
-            "4. 하단에서 채널 ID 복사\n\n"
-            "공개 채널: C로 시작\n"
-            "비공개 채널: G로 시작\n"
-            "DM: D로 시작 (권장하지 않음)"
+            "4. 하단에서 채널 ID 복사"
         )
-        layout.addRow("채널 ID:", self.channel_id_edit)
+        channel_id_layout.addWidget(self.channel_id_combo, stretch=2)
+        
+        # 채널 ID 코드 표시 (읽기 전용)
+        self.channel_id_display = QLineEdit()
+        self.channel_id_display.setEnabled(False)
+        self.channel_id_display.setReadOnly(True)
+        self.channel_id_display.setPlaceholderText("채널 ID 코드")
+        channel_id_layout.addWidget(self.channel_id_display, stretch=3)
+        
+        # 채널 ID 추가 버튼
+        add_channel_btn = QPushButton("+")
+        add_channel_btn.setFixedWidth(30)
+        add_channel_btn.setToolTip("새 채널 추가")
+        add_channel_btn.clicked.connect(self.add_channel)
+        channel_id_layout.addWidget(add_channel_btn)
+        
+        layout.addRow("채널 ID:", channel_id_layout)
+        
+        # 초기 데이터 로드
+        self.load_bot_tokens()
+        self.load_channels()
         
         # 스레드 검색 키워드 입력 (스레드 댓글용만 사용)
         self.thread_keyword_edit = QLineEdit()
@@ -381,6 +420,90 @@ class ScheduleDialog(QDialog):
         if current_text:
             self.webhook_combo.setEditText(current_text)
     
+    def load_bot_tokens(self):
+        """slack_tokens.json에서 Bot Token 목록 로드"""
+        tokens = SlackTokenManager.load_tokens()
+        
+        self.bot_token_combo.clear()
+        self.bot_token_combo.addItem("선택하세요", "")  # 빈 항목
+        
+        for token_info in tokens:
+            name = token_info.get('name', '')
+            token = token_info.get('token', '')
+            if name and token:
+                self.bot_token_combo.addItem(name, token)
+    
+    def load_channels(self):
+        """slack_tokens.json에서 채널 목록 로드"""
+        channels = SlackTokenManager.load_channels()
+        
+        self.channel_id_combo.clear()
+        self.channel_id_combo.addItem("선택하세요", "")  # 빈 항목
+        
+        for channel_info in channels:
+            name = channel_info.get('name', '')
+            channel_id = channel_info.get('channel_id', '')
+            if name and channel_id:
+                self.channel_id_combo.addItem(name, channel_id)
+    
+    def on_bot_token_changed(self, text):
+        """Bot Token 드롭다운 선택 변경 시"""
+        # 현재 선택된 항목의 토큰 값 가져오기
+        token = self.bot_token_combo.currentData()
+        if token:
+            self.bot_token_display.setText(token)
+        else:
+            self.bot_token_display.setText("")
+    
+    def on_channel_id_changed(self, text):
+        """채널 ID 드롭다운 선택 변경 시"""
+        # 현재 선택된 항목의 채널 ID 값 가져오기
+        channel_id = self.channel_id_combo.currentData()
+        if channel_id:
+            self.channel_id_display.setText(channel_id)
+        else:
+            self.channel_id_display.setText("")
+    
+    def add_bot_token(self):
+        """Bot Token 추가 버튼 클릭"""
+        dialog = AddSlackItemDialog(self, item_type='bot_token')
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            try:
+                SlackTokenManager.save_token(data['name'], data['value'])
+                self.load_bot_tokens()
+                
+                # 방금 추가한 항목 선택
+                index = self.bot_token_combo.findText(data['name'])
+                if index >= 0:
+                    self.bot_token_combo.setCurrentIndex(index)
+                
+                QMessageBox.information(self, "성공", "Bot Token이 추가되었습니다.")
+            except ValueError as e:
+                QMessageBox.warning(self, "추가 실패", str(e))
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"Bot Token 추가 중 오류 발생:\n{e}")
+    
+    def add_channel(self):
+        """채널 추가 버튼 클릭"""
+        dialog = AddSlackItemDialog(self, item_type='channel')
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            try:
+                SlackTokenManager.save_channel(data['name'], data['value'])
+                self.load_channels()
+                
+                # 방금 추가한 항목 선택
+                index = self.channel_id_combo.findText(data['name'])
+                if index >= 0:
+                    self.channel_id_combo.setCurrentIndex(index)
+                
+                QMessageBox.information(self, "성공", "채널이 추가되었습니다.")
+            except ValueError as e:
+                QMessageBox.warning(self, "추가 실패", str(e))
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"채널 추가 중 오류 발생:\n{e}")
+    
     def on_slack_enabled_toggled(self, checked: bool):
         """슬랙 알림 활성화 토글"""
         self.notification_standalone_radio.setEnabled(checked)
@@ -392,8 +515,10 @@ class ScheduleDialog(QDialog):
         else:
             # 모든 필드 비활성화
             self.webhook_combo.setEnabled(False)
-            self.bot_token_edit.setEnabled(False)
-            self.channel_id_edit.setEnabled(False)
+            self.bot_token_combo.setEnabled(False)
+            self.bot_token_display.setEnabled(False)
+            self.channel_id_combo.setEnabled(False)
+            self.channel_id_display.setEnabled(False)
             self.thread_keyword_edit.setEnabled(False)
             self.first_message_edit.setEnabled(False)
     
@@ -404,15 +529,19 @@ class ScheduleDialog(QDialog):
         if is_standalone:
             # 단독 알림: Webhook URL 대신 Bot Token과 채널 ID 사용
             self.webhook_combo.setEnabled(False)
-            self.bot_token_edit.setEnabled(True)
-            self.channel_id_edit.setEnabled(True)
+            self.bot_token_combo.setEnabled(True)
+            self.bot_token_display.setEnabled(True)
+            self.channel_id_combo.setEnabled(True)
+            self.channel_id_display.setEnabled(True)
             self.thread_keyword_edit.setEnabled(False)
             self.first_message_edit.setEnabled(True)
         else:
             # 스레드 댓글: 모든 필드 활성화
             self.webhook_combo.setEnabled(False)  # bot token 사용으로 변경됨
-            self.bot_token_edit.setEnabled(True)
-            self.channel_id_edit.setEnabled(True)
+            self.bot_token_combo.setEnabled(True)
+            self.bot_token_display.setEnabled(True)
+            self.channel_id_combo.setEnabled(True)
+            self.channel_id_display.setEnabled(True)
             self.thread_keyword_edit.setEnabled(True)
             self.first_message_edit.setEnabled(True)
     
@@ -722,6 +851,8 @@ class ScheduleDialog(QDialog):
         bot_token = self.schedule.get('bot_token', '')
         channel_id = self.schedule.get('channel_id', '')
         thread_keyword = self.schedule.get('thread_keyword', '')
+        bot_token_name = self.schedule.get('bot_token_name', '')
+        channel_id_name = self.schedule.get('channel_id_name', '')
         
         self.slack_enabled_checkbox.setChecked(slack_enabled)
         
@@ -741,9 +872,31 @@ class ScheduleDialog(QDialog):
                 # 없으면 직접 입력된 것으로 설정
                 self.webhook_combo.setEditText(slack_webhook)
         
-        # 스레드 댓글 알림 설정
-        self.bot_token_edit.setText(bot_token)
-        self.channel_id_edit.setText(channel_id)
+        # Bot Token 설정 (이름으로 찾아서 선택)
+        if bot_token_name:
+            idx = self.bot_token_combo.findText(bot_token_name)
+            if idx >= 0:
+                self.bot_token_combo.setCurrentIndex(idx)
+            else:
+                # 이름이 없으면 코드를 직접 표시
+                self.bot_token_display.setText(bot_token)
+        elif bot_token:
+            # 이름이 없고 코드만 있으면 코드를 표시
+            self.bot_token_display.setText(bot_token)
+        
+        # 채널 ID 설정 (이름으로 찾아서 선택)
+        if channel_id_name:
+            idx = self.channel_id_combo.findText(channel_id_name)
+            if idx >= 0:
+                self.channel_id_combo.setCurrentIndex(idx)
+            else:
+                # 이름이 없으면 코드를 직접 표시
+                self.channel_id_display.setText(channel_id)
+        elif channel_id:
+            # 이름이 없고 코드만 있으면 코드를 표시
+            self.channel_id_display.setText(channel_id)
+        
+        # 스레드 키워드
         self.thread_keyword_edit.setText(thread_keyword)
         
         # 첫 메시지
@@ -795,9 +948,14 @@ class ScheduleDialog(QDialog):
         slack_enabled = self.slack_enabled_checkbox.isChecked()
         notification_type = 'thread' if self.notification_thread_radio.isChecked() else 'standalone'
         
-        # 모든 필드의 값을 가져옴 (활성화 여부와 무관)
-        bot_token = self.bot_token_edit.text().strip()
-        channel_id = self.channel_id_edit.text().strip()
+        # Bot Token 정보 가져오기 (이름과 코드)
+        bot_token_name = self.bot_token_combo.currentText() if self.bot_token_combo.currentIndex() > 0 else ''
+        bot_token = self.bot_token_display.text().strip()
+        
+        # 채널 ID 정보 가져오기 (이름과 코드)
+        channel_id_name = self.channel_id_combo.currentText() if self.channel_id_combo.currentIndex() > 0 else ''
+        channel_id = self.channel_id_display.text().strip()
+        
         thread_keyword = self.thread_keyword_edit.text().strip()
         first_message = self.first_message_edit.text().strip()
         
@@ -822,7 +980,9 @@ class ScheduleDialog(QDialog):
             'slack_webhook': slack_webhook,  # 호환성
             'notification_type': notification_type,
             'bot_token': bot_token,
+            'bot_token_name': bot_token_name,
             'channel_id': channel_id,
+            'channel_id_name': channel_id_name,
             'thread_keyword': thread_keyword,
             'first_message': first_message
         }

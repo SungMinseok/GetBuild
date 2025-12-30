@@ -19,6 +19,7 @@ psutil>=5.9.0
 # 빌드 도구
 pyinstaller==5.13.2
 setuptools>=65.0.0
+pywin32>=306  # PyInstaller 빌드 시 필수 (Windows)
 
 # 자동화 (필요 시)
 PyAutoGUI==0.9.54
