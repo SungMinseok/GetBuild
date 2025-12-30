@@ -1,0 +1,27 @@
+{
+    "bot_tokens": [
+        {
+            "name": "QA팀 Bot",
+            "token": "xoxb-YOUR-BOT-TOKEN-HERE"
+        },
+        {
+            "name": "개발팀 Bot",
+            "token": "xoxb-YOUR-ANOTHER-BOT-TOKEN-HERE"
+        }
+    ],
+    "channels": [
+        {
+            "name": "빌드 공지 채널",
+            "channel_id": "C01234ABCDE"
+        },
+        {
+            "name": "QA 알림 채널",
+            "channel_id": "C56789FGHIJ"
+        },
+        {
+            "name": "개발팀 비공개 채널",
+            "channel_id": "G12345KLMNO"
+        }
+    ]
+}
+

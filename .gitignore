@@ -1,68 +1,83 @@
--# 설정 파일 (개인 정보 포함)
-settings.json
-settings*.json
-config.json
-config2.json
-config3.json
-branch_settings.json
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# 민감한 정보
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# PyQt
+*.ui.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 민감한 정보 (토큰, 비밀번호 등)
 token.json
-schedule.json
-schedule*.json
+slack_tokens.json
+feedback_tokens.json
 hook.json
 
-# 빌드 결과물
-build/
-dist/
-*.exe
-*.spec
-*.zip
+# 참고: feedback_config_encrypted.json은 사용하지 않음 (하드코딩 방식 사용)
 
-# 로그 및 캐시
+# 설정 파일 (개인 설정)
+settings.json
+schedule.json
+config/settings.json
+config/schedule.json
+
+# 로그
 log/
-execute*
-__pycache__/
-*.pyc
+*.log
 
-# 백업
-backup/
-128/
-
-# ChromeDriver (자동 다운로드)
+# 빌드 결과
+result/
+temp_download/
 driver/
 
-# 환경 변수
+# CSV 결과 파일
+getbuild_result_*.csv
+
+# ChromeDriver
+chromedriver.exe
+*/chromedriver.exe
+
+# Lambda 배포 파일
+lambda/package/
+lambda/function.zip
+lambda/trust-policy.json
+
+backup/
+config/
+lambda/
+scripts
 .env
-
-# 데이터 파일
-getbuild*.csv
-
-# 스크립트 (자동 생성)
-*.ps1
-*.xml
-
-# 임시 파일
-*.tmp
-*.bak
-*.backup
-version_info.txt
-version.txt
-QuickBuild_release.spec
-changelog.txt.bak
-build_pyinstaller.log
-
-# 업데이트 임시 파일
-QuickBuild_update.zip
-BundleEditor_update.zip
-update_extract/
-update_installer.bat
-hook.json
-
-.venv/
-
-142
-141
-all_commits_with_diff.txt
-slack_tokens.json
-slack_tokens.json.example
+*.spec
+docs

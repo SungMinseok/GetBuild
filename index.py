@@ -20,6 +20,11 @@ from core.worker_thread import simplify_error_message
 
 # UI 모듈 import
 from ui import ScheduleDialog, ScheduleItemWidget, SettingsDialog
+# 피드백 다이얼로그 - Slack 직접 전송 방식 (암호화된 토큰 사용)
+try:
+    from ui.feedback_dialog_slack import FeedbackDialogSlack as FeedbackDialog
+except ImportError:
+    from ui.feedback_dialog import FeedbackDialog
 
 # 기존 모듈 import
 from makelog import log_execution
@@ -103,18 +108,18 @@ class QuickBuildApp(QMainWindow):
         # 로그
         self.log("QuickBuild 시작")
         
-        # ChromeDriver 최초 설치 확인 (비동기)
-        QTimer.singleShot(500, self.check_chromedriver_on_startup)
-        
-        # 앱 시작 3초 후 업데이트 체크 (백그라운드)
+        # 앱 시작 500ms 후 업데이트 체크 (백그라운드) - 먼저 실행
         if self.auto_updater:
-            QTimer.singleShot(3000, self.check_for_updates_on_startup)
+            QTimer.singleShot(500, self.check_for_updates_on_startup)
+        
+        # ChromeDriver 최초 설치 확인 (비동기) - 업데이트 확인 후 실행
+        QTimer.singleShot(3000, self.check_chromedriver_on_startup)
     
     def init_ui(self):
         """UI 초기화"""
         # 개발/배포 모드 구분
         is_dev_mode = self.is_running_from_python()
-        dev_tag = " [개발용]" if is_dev_mode else ""
+        dev_tag = " [DEV]" if is_dev_mode else ""
         
         self.setWindowTitle(f'QuickBuild {self.read_version()}{dev_tag}')
         self.setWindowIcon(QIcon('ico.ico'))
@@ -168,9 +173,9 @@ class QuickBuildApp(QMainWindow):
         about_action.triggered.connect(self.show_about)
         menu.addAction(about_action)
         
-        config_action = QAction("설정 파일 열기", self)
-        config_action.triggered.connect(lambda: os.startfile(self.config_file))
-        menu.addAction(config_action)
+        # config_action = QAction("설정 파일 열기", self)
+        # config_action.triggered.connect(lambda: os.startfile(self.config_file))
+        # menu.addAction(config_action)
         
         # Settings 메뉴 추가
         settings_action = QAction("Settings", self)
@@ -180,6 +185,11 @@ class QuickBuildApp(QMainWindow):
         update_action = QAction("업데이트 확인", self)
         update_action.triggered.connect(self.check_update)
         menu.addAction(update_action)
+        
+        # 버그 및 피드백 메뉴
+        feedback_action = QAction("버그 및 피드백", self)
+        feedback_action.triggered.connect(self.show_feedback_dialog)
+        menu.addAction(feedback_action)
         
         # 버전 표시
         version_label = QLabel(f"Version: {self.read_version()}")
@@ -254,6 +264,25 @@ class QuickBuildApp(QMainWindow):
         """)
         self.refresh_btn.clicked.connect(self.refresh_schedule_list)
         layout.addWidget(self.refresh_btn)
+        
+        # 피드백 버튼 추가
+        self.feedback_btn = QPushButton("💬 피드백")
+        self.feedback_btn.setFixedSize(130, 30)
+        self.feedback_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+        """)
+        self.feedback_btn.clicked.connect(self.show_feedback_dialog)
+        layout.addWidget(self.feedback_btn)
         
         header.setLayout(layout)
         container_layout.addWidget(header)
@@ -1593,7 +1622,14 @@ Branch: {branch}
         if dialog.exec_():
             # 설정 저장됨
             self.debug_mode = dialog.get_debug_mode()
-            self.log(f"설정 저장됨 - Debug 모드: {'ON' if self.debug_mode else 'OFF'}")
+            self.log("설정이 저장되었습니다")
+    
+    def show_feedback_dialog(self):
+        """버그 및 피드백 다이얼로그 표시"""
+        # 앱 버전 전달
+        app_version = self.read_version()
+        dialog = FeedbackDialog(self, app_version)
+        dialog.exec_()
     
     def load_debug_mode(self):
         """settings.json에서 debug_mode 로드"""

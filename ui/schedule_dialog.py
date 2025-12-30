@@ -132,7 +132,11 @@ class ScheduleDialog(QDialog):
         weekdays = ['월', '화', '수', '목', '금', '토', '일']
         for i, day in enumerate(weekdays):
             checkbox = QCheckBox(day)
-            checkbox.setEnabled(False)  # 기본적으로 비활성화
+            #월화수목금은 활성화, 토일은 비활성화
+            if day in ['월', '화', '수', '목', '금']:
+                checkbox.setEnabled(True)
+            else:
+                checkbox.setEnabled(False)  
             self.weekday_checkboxes.append(checkbox)
             weekday_layout.addWidget(checkbox)
         
@@ -141,6 +145,7 @@ class ScheduleDialog(QDialog):
         
         # 라디오 버튼 변경 시 요일 체크박스 활성화/비활성화
         self.weekly_radio.toggled.connect(self.on_weekly_toggled)
+        #
         
         group.setLayout(layout)
         return group

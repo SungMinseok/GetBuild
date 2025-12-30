@@ -1,8 +1,15 @@
 {
-  "version": "3.0.0",
-  "build_date": "2025-12-12",
+  "version": "3.0.1",
+  "build_date": "2025-12-30",
   "update_url": "https://api.github.com/repos/SungMinseok/GetBuild/releases/latest",
   "changelog": [
+    {
+      "version": "3.0.1",
+      "date": "2025-12-30",
+      "changes": [
+        "슬랙 알림 설정 UI 개선 - Bot Token 및 채널 ID 선택 기능 추가"
+      ]
+    },
     {
       "version": "3.0.0",
       "date": "2025-12-12",
