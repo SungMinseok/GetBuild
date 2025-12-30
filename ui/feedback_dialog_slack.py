@@ -551,5 +551,9 @@ class FeedbackDialogSlack(QDialog):
             QMessageBox.information(self, "제출 완료", message)
             self.accept()
         else:
-            QMessageBox.warning(self, "제출 실패", message)
+            # 오류 메시지에 관리자 연락처 추가
+            error_message = message + "\n\n" + "=" * 50 + "\n"
+            error_message += "문제가 지속되면 관리자에게 문의하세요:\n"
+            error_message += "📧 성민석 (mssung@pubg.com)"
+            QMessageBox.warning(self, "제출 실패", error_message)
 
