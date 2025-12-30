@@ -44,6 +44,7 @@ token.json
 slack_tokens.json
 feedback_tokens.json
 hook.json
+SLACK_CREDENTIALS.txt
 
 # 참고: feedback_config_encrypted.json은 사용하지 않음 (하드코딩 방식 사용)
 

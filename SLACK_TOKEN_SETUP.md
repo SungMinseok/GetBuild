@@ -9,7 +9,29 @@ GitHub가 Slack API 토큰을 감지하여 push를 차단합니다.
 
 ## 🔧 설정 방법
 
-### 방법 1: 환경 변수 (권장)
+### 방법 1: 자동 설정 스크립트 (권장)
+
+#### PowerShell
+```powershell
+# 스크립트 실행 (대화형으로 토큰 입력)
+.\setup_env.ps1
+
+# 입력 프롬프트:
+# Slack Bot Token 입력: [여기에 토큰 입력]
+# Slack Channel ID 입력: [여기에 채널 ID 입력]
+```
+
+#### CMD
+```cmd
+# 스크립트 실행 (대화형으로 토큰 입력)
+setup_env.bat
+
+# 입력 프롬프트:
+# Slack Bot Token 입력: [여기에 토큰 입력]
+# Slack Channel ID 입력: [여기에 채널 ID 입력]
+```
+
+### 방법 2: 수동 설정
 
 #### Windows
 ```cmd
