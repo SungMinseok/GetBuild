@@ -1642,7 +1642,8 @@ Branch: {branch}
         """배포 다이얼로그 표시 (Dev 모드 전용)"""
         try:
             from ui.deploy_dialog import DeployDialog
-            dialog = DeployDialog(self)
+            current_version = self.read_version()
+            dialog = DeployDialog(self, current_version)
             dialog.exec_()
         except ImportError as e:
             QMessageBox.warning(self, "오류", f"배포 다이얼로그를 불러올 수 없습니다:\n{e}")

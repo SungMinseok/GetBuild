@@ -54,7 +54,9 @@ class DeployWorkerThread(QThread):
                 text=True,
                 bufsize=1,
                 env=env,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
+                encoding='utf-8',
+                errors='replace'  # 디코딩 에러 시 대체 문자 사용
             )
             
             # 빌드 로그 실시간 출력
@@ -112,7 +114,9 @@ class DeployWorkerThread(QThread):
                 text=True,
                 bufsize=1,
                 env=deploy_env,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
+                encoding='utf-8',
+                errors='replace'  # 디코딩 에러 시 대체 문자 사용
             )
             
             # 배포 로그 실시간 출력
@@ -157,9 +161,10 @@ class DeployWorkerThread(QThread):
 class DeployDialog(QDialog):
     """배포 다이얼로그"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, current_version=None):
         super().__init__(parent)
         self.worker = None
+        self.current_version = current_version or "3.0.0"
         self.init_ui()
     
     def init_ui(self):
@@ -179,6 +184,19 @@ class DeployDialog(QDialog):
         title_label.setStyleSheet("color: #2196F3; padding: 10px;")
         layout.addWidget(title_label)
         
+        # 현재 버전 표시
+        version_info_label = QLabel(f"현재 버전: {self.current_version}")
+        version_info_label.setStyleSheet("""
+            background-color: #E3F2FD;
+            color: #1976D2;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-size: 11pt;
+            font-weight: bold;
+            margin: 5px 0px;
+        """)
+        layout.addWidget(version_info_label)
+        
         # 설정 그룹
         settings_group = QGroupBox("배포 설정")
         settings_layout = QVBoxLayout()
@@ -188,14 +206,41 @@ class DeployDialog(QDialog):
         version_label = QLabel("버전 타입:")
         version_label.setFixedWidth(100)
         self.version_combo = QComboBox()
-        self.version_combo.addItem("PATCH (버그 수정)", "patch")
-        self.version_combo.addItem("MINOR (새 기능)", "minor")
-        self.version_combo.addItem("MAJOR (Breaking changes)", "major")
-        self.version_combo.addItem("테스트 빌드 (버전 변경 없음)", "test")
+        
+        # 현재 버전 파싱
+        try:
+            parts = self.current_version.split('.')
+            major = int(parts[0]) if len(parts) > 0 else 3
+            minor = int(parts[1]) if len(parts) > 1 else 0
+            patch = int(parts[2]) if len(parts) > 2 else 0
+        except:
+            major, minor, patch = 3, 0, 0
+        
+        # 각 버전 타입별 예상 버전 표시
+        self.version_combo.addItem(f"PATCH (버그 수정) → {major}.{minor}.{patch + 1}", "patch")
+        self.version_combo.addItem(f"MINOR (새 기능) → {major}.{minor + 1}.0", "minor")
+        self.version_combo.addItem(f"MAJOR (Breaking changes) → {major + 1}.0.0", "major")
+        self.version_combo.addItem(f"테스트 빌드 (버전 변경 없음) → {self.current_version}", "test")
         self.version_combo.setCurrentIndex(0)
         version_layout.addWidget(version_label)
         version_layout.addWidget(self.version_combo)
         settings_layout.addLayout(version_layout)
+        
+        # 버전 타입 설명
+        version_desc_label = QLabel(
+            "• PATCH: 세 번째 숫자 증가 (버그 수정, 작은 개선)\n"
+            "• MINOR: 두 번째 숫자 증가 (새 기능 추가, 하위 호환)\n"
+            "• MAJOR: 첫 번째 숫자 증가 (Breaking changes, 호환성 깨짐)"
+        )
+        version_desc_label.setStyleSheet("""
+            color: #757575;
+            font-size: 9pt;
+            padding: 5px 10px;
+            background-color: #F5F5F5;
+            border-radius: 3px;
+            margin: 5px 0px;
+        """)
+        settings_layout.addWidget(version_desc_label)
         
         # 변경사항 입력
         changelog_label = QLabel("변경사항:")
