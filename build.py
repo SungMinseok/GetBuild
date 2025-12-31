@@ -466,44 +466,77 @@ def main():
         if version_info:
             current_version = version_info.get('version', '3.0.0')
             print(f"현재 버전: {current_version}")
-        # 버전 타입 선택
-        print("\n버전 업데이트 타입을 선택하세요:")
-        print("  1. PATCH (버그 수정) - 기본값")
-        print("  2. MINOR (새 기능 추가)")
-        print("  3. MAJOR (Breaking changes)")
-        print("  0. 테스트 빌드 (버전 변경 없음)")
-        version_choice = input("선택 (0/1/2/3, Enter=1): ").strip()
         
-        # 테스트 빌드 옵션 체크
-        if version_choice == '0':
-            print("\n🔧 테스트 빌드 모드 (버전 변경 없음)")
-            version_info = load_version_info()
-            if not version_info:
-                print("[ERROR] version.json을 찾을 수 없습니다.")
-                return 1
-            new_version = version_info.get('version', '3.0.0')
-            skip_version_update = True  # 플래그 설정
+        # 환경변수에서 버전 타입과 changelog 가져오기 (자동 모드)
+        env_version_type = os.environ.get('BUILD_VERSION_TYPE', '').strip()
+        env_changelog = os.environ.get('BUILD_CHANGELOG', '').strip()
+        
+        if env_version_type:
+            # 자동 모드 (환경변수 사용)
+            print(f"\n🤖 자동 모드: 버전 타입 = {env_version_type}")
+            
+            if env_version_type == 'test':
+                print("\n🔧 테스트 빌드 모드 (버전 변경 없음)")
+                version_info = load_version_info()
+                if not version_info:
+                    print("[ERROR] version.json을 찾을 수 없습니다.")
+                    return 1
+                new_version = version_info.get('version', '3.0.0')
+                skip_version_update = True
+            else:
+                version_type = env_version_type
+                changelog_msg = env_changelog or "버그 수정 및 성능 개선"
+                
+                print(f"변경사항: {changelog_msg}")
+                
+                # 버전 업데이트
+                try:
+                    new_version = update_version(version_type, changelog_msg)
+                except Exception as e:
+                    print(f"[ERROR] 버전 업데이트 실패: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return 1
         else:
-            version_type_map = {
-                '1': 'patch',
-                '2': 'minor',
-                '3': 'major',
-                '': 'patch'
-            }
-            version_type = version_type_map.get(version_choice, 'patch')
+            # 대화형 모드 (기존 방식)
+            # 버전 타입 선택
+            print("\n버전 업데이트 타입을 선택하세요:")
+            print("  1. PATCH (버그 수정) - 기본값")
+            print("  2. MINOR (새 기능 추가)")
+            print("  3. MAJOR (Breaking changes)")
+            print("  0. 테스트 빌드 (버전 변경 없음)")
+            version_choice = input("선택 (0/1/2/3, Enter=1): ").strip()
             
-            # 변경사항 입력
-            print("\n변경사항을 입력하세요 (Enter만 누르면 '버그 수정 및 성능 개선' 사용):")
-            changelog_msg = input("> ").strip() or "버그 수정 및 성능 개선"
-            
-            # 버전 업데이트
-            try:
-                new_version = update_version(version_type, changelog_msg)
-            except Exception as e:
-                print(f"[ERROR] 버전 업데이트 실패: {e}")
-                import traceback
-                traceback.print_exc()
-                return 1
+            # 테스트 빌드 옵션 체크
+            if version_choice == '0':
+                print("\n🔧 테스트 빌드 모드 (버전 변경 없음)")
+                version_info = load_version_info()
+                if not version_info:
+                    print("[ERROR] version.json을 찾을 수 없습니다.")
+                    return 1
+                new_version = version_info.get('version', '3.0.0')
+                skip_version_update = True  # 플래그 설정
+            else:
+                version_type_map = {
+                    '1': 'patch',
+                    '2': 'minor',
+                    '3': 'major',
+                    '': 'patch'
+                }
+                version_type = version_type_map.get(version_choice, 'patch')
+                
+                # 변경사항 입력
+                print("\n변경사항을 입력하세요 (Enter만 누르면 '버그 수정 및 성능 개선' 사용):")
+                changelog_msg = input("> ").strip() or "버그 수정 및 성능 개선"
+                
+                # 버전 업데이트
+                try:
+                    new_version = update_version(version_type, changelog_msg)
+                except Exception as e:
+                    print(f"[ERROR] 버전 업데이트 실패: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return 1
     else:
         print("\n[1/5] Version update skipped (SKIP_VERSION_UPDATE=1)")
         version_info = load_version_info()

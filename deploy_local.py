@@ -372,18 +372,56 @@ def main():
         return 1
     
     # 3. Changelog 파일 생성 및 편집
-    changelog_content = create_changelog_file(version_info)
+    # 자동 모드 확인
+    auto_mode = os.environ.get('DEPLOY_AUTO_MODE', '0') == '1'
+    
+    if auto_mode:
+        # 자동 모드: changelog.txt 파일 자동 생성 (편집 없이)
+        changelog_file_path = "changelog.txt"
+        build_date = version_info.get('build_date', datetime.now().strftime("%Y-%m-%d"))
+        
+        # 최신 changelog 가져오기
+        changelogs = version_info.get('changelog', [])
+        latest_changes = []
+        if changelogs:
+            latest_changes = changelogs[0].get('changes', [])
+        
+        # changelog.txt 생성
+        content = f"# QuickBuild {version} 릴리즈 노트\n\n"
+        content += f"**빌드 날짜**: {build_date}\n\n"
+        content += "## 변경사항\n\n"
+        
+        if latest_changes:
+            for change in latest_changes:
+                content += f"- {change}\n"
+        else:
+            content += "- 버그 수정 및 성능 개선\n"
+        
+        content += "\n---\n\n"
+        content += "**자동 업데이트 지원**: QuickBuild를 실행하면 자동으로 새 버전을 확인합니다.\n"
+        
+        with open(changelog_file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print(f"\n📝 changelog.txt 파일이 자동 생성되었습니다.")
+        changelog_content = content
+    else:
+        # 대화형 모드: 기존 방식 (파일 열어서 편집)
+        changelog_content = create_changelog_file(version_info)
     
     # 4. 배포 확인
-    print("\n" + "=" * 60)
-    print(f"🚀 QuickBuild {version} 릴리즈를 GitHub에 배포하시겠습니까?")
-    print("=" * 60)
-    response = input("계속하려면 'y'를 입력하세요 (y/N): ").lower().strip()
-    
-    if response != 'y':
-        print("\n배포 취소됨")
-        cleanup_files(zip_path)
-        return 0
+    if auto_mode:
+        print("\n🤖 자동 모드: 배포를 진행합니다...")
+    else:
+        print("\n" + "=" * 60)
+        print(f"🚀 QuickBuild {version} 릴리즈를 GitHub에 배포하시겠습니까?")
+        print("=" * 60)
+        response = input("계속하려면 'y'를 입력하세요 (y/N): ").lower().strip()
+        
+        if response != 'y':
+            print("\n배포 취소됨")
+            cleanup_files(zip_path)
+            return 0
     
     # 5. GitHub 토큰 가져오기 및 검증
     print("\n🔐 GitHub 토큰 확인 중...")
@@ -423,10 +461,12 @@ def main():
         print("=" * 60)
         
         # 9. Slack 알림 (선택사항)
-        if webhooks:
+        if webhooks and not auto_mode:
             webhook_url = choose_webhook(webhooks)
             if webhook_url:
                 send_slack_notification(version, changelog_content, webhook_url)
+        elif auto_mode:
+            print("\n🤖 자동 모드: Slack 알림 건너뛰기")
         
         # 10. 임시 파일 정리
         cleanup_files(zip_path)

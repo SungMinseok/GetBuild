@@ -191,6 +191,13 @@ class QuickBuildApp(QMainWindow):
         feedback_action.triggered.connect(self.show_feedback_dialog)
         menu.addAction(feedback_action)
         
+        # Dev 모드일 때만 배포 메뉴 추가
+        if self.is_running_from_python():
+            menu.addSeparator()
+            deploy_action = QAction("🚀 빠른 빌드 및 배포", self)
+            deploy_action.triggered.connect(self.show_deploy_dialog)
+            menu.addAction(deploy_action)
+        
         # 버전 표시
         version_label = QLabel(f"Version: {self.read_version()}")
         version_label.setStyleSheet("color: #cccccc; margin-right: 10px; font-weight: bold;")
@@ -1630,6 +1637,17 @@ Branch: {branch}
         app_version = self.read_version()
         dialog = FeedbackDialog(self, app_version)
         dialog.exec_()
+    
+    def show_deploy_dialog(self):
+        """배포 다이얼로그 표시 (Dev 모드 전용)"""
+        try:
+            from ui.deploy_dialog import DeployDialog
+            dialog = DeployDialog(self)
+            dialog.exec_()
+        except ImportError as e:
+            QMessageBox.warning(self, "오류", f"배포 다이얼로그를 불러올 수 없습니다:\n{e}")
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"배포 다이얼로그 실행 중 오류:\n{e}")
     
     def load_debug_mode(self):
         """settings.json에서 debug_mode 로드"""
