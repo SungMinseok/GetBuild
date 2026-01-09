@@ -383,12 +383,25 @@ def build_exe(spec_file):
     
     exe_path = 'dist/QuickBuild.exe'
     
+    # 자동 모드 확인
+    auto_mode = os.environ.get('BUILD_VERSION_TYPE', '').strip() != ''
+    force_rebuild = os.environ.get('BUILD_FORCE_REBUILD', '1') == '1'
+    
     # 이미 존재하면 건너뛰기 (선택사항)
     if os.path.exists(exe_path):
-        response = input(f"  [!] {exe_path} 파일이 이미 존재합니다. 다시 빌드하시겠습니까? (y/N): ").strip().lower()
-        if response != 'y':
-            print(f"[SKIP] 기존 EXE 사용: {exe_path}")
-            return True
+        if auto_mode:
+            # 자동 모드: 항상 재빌드 (force_rebuild 설정에 따라)
+            if force_rebuild:
+                print(f"  🤖 자동 모드: 기존 EXE 덮어쓰기")
+            else:
+                print(f"[SKIP] 기존 EXE 사용: {exe_path}")
+                return True
+        else:
+            # 대화형 모드: 사용자에게 물어보기
+            response = input(f"  [!] {exe_path} 파일이 이미 존재합니다. 다시 빌드하시겠습니까? (y/N): ").strip().lower()
+            if response != 'y':
+                print(f"[SKIP] 기존 EXE 사용: {exe_path}")
+                return True
     
     # PyInstaller 캐시 정리
     print("  PyInstaller 캐시 정리 중...")

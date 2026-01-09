@@ -15,12 +15,14 @@ class DeployWorkerThread(QThread):
     log_signal = pyqtSignal(str)
     progress_signal = pyqtSignal(int, str)  # (진행률, 상태 메시지)
     finished_signal = pyqtSignal(bool, str)  # (성공 여부, 메시지)
+    heartbeat_signal = pyqtSignal(str)  # 하트비트 (프로세스 살아있음 확인)
     
-    def __init__(self, version_type, changelog_message, skip_github):
+    def __init__(self, version_type, changelog_message, skip_github, force_rebuild):
         super().__init__()
         self.version_type = version_type
         self.changelog_message = changelog_message
         self.skip_github = skip_github
+        self.force_rebuild = force_rebuild
         self.cancelled = False
     
     def run(self):
@@ -41,43 +43,92 @@ class DeployWorkerThread(QThread):
             # 환경변수 설정 (버전 업데이트 건너뛰기)
             env = os.environ.copy()
             env['SKIP_VERSION_UPDATE'] = '0'  # 버전 업데이트 수행
+            env['PYTHONUNBUFFERED'] = '1'  # Python 출력 버퍼링 비활성화
             
             # build.py 실행 (비대화형 모드)
             # 버전 타입과 changelog를 환경변수로 전달
             env['BUILD_VERSION_TYPE'] = self.version_type
             env['BUILD_CHANGELOG'] = self.changelog_message
+            env['BUILD_FORCE_REBUILD'] = '1' if self.force_rebuild else '0'
             
             build_process = subprocess.Popen(
-                [sys.executable, 'build.py'],
+                [sys.executable, '-u', 'build.py'],  # -u: unbuffered 모드
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1,
+                bufsize=0,  # 버퍼링 완전 비활성화
                 env=env,
                 cwd=os.getcwd(),
                 encoding='utf-8',
                 errors='replace'  # 디코딩 에러 시 대체 문자 사용
             )
             
-            # 빌드 로그 실시간 출력
-            for line in iter(build_process.stdout.readline, ''):
+            # 빌드 로그 실시간 출력 (논블로킹 방식)
+            import time
+            import select
+            
+            last_output_time = time.time()
+            building_exe = False
+            no_output_count = 0
+            
+            while True:
+                # 프로세스 종료 확인
+                if build_process.poll() is not None:
+                    # 남은 출력 읽기
+                    remaining = build_process.stdout.read()
+                    if remaining:
+                        for line in remaining.splitlines():
+                            if line.strip():
+                                self.log_signal.emit(line.rstrip())
+                    break
+                
+                # 취소 확인
                 if self.cancelled:
                     build_process.terminate()
                     return
                 
-                line = line.rstrip()
+                # 출력 읽기 (타임아웃 1초)
+                line = build_process.stdout.readline()
+                
                 if line:
-                    self.log_signal.emit(line)
+                    line = line.rstrip()
+                    if line:
+                        self.log_signal.emit(line)
+                        last_output_time = time.time()
+                        no_output_count = 0
+                        
+                        # 진행률 추정
+                        if "Creating version file" in line:
+                            self.progress_signal.emit(20, "버전 파일 생성 중...")
+                        elif "Creating spec file" in line:
+                            self.progress_signal.emit(30, "Spec 파일 생성 중...")
+                        elif "Building EXE" in line:
+                            self.progress_signal.emit(40, "EXE 빌드 중... (수 분 소요)")
+                            building_exe = True
+                        elif "Cleaning up" in line:
+                            self.progress_signal.emit(80, "정리 중...")
+                            building_exe = False
+                        
+                        # PyInstaller 진행 상황 로그
+                        if building_exe:
+                            if "INFO: PyInstaller" in line or "INFO: Building" in line:
+                                self.progress_signal.emit(50, "PyInstaller 실행 중...")
+                            elif "INFO: Analyzing" in line:
+                                self.progress_signal.emit(55, "의존성 분석 중...")
+                            elif "INFO: Processing" in line:
+                                self.progress_signal.emit(60, "파일 처리 중...")
+                            elif "INFO: Building EXE" in line or "Building EXE from" in line:
+                                self.progress_signal.emit(70, "EXE 생성 중...")
+                else:
+                    # 출력이 없을 때 하트비트
+                    time.sleep(0.5)
+                    no_output_count += 1
                     
-                    # 진행률 추정
-                    if "Creating version file" in line:
-                        self.progress_signal.emit(20, "버전 파일 생성 중...")
-                    elif "Creating spec file" in line:
-                        self.progress_signal.emit(30, "Spec 파일 생성 중...")
-                    elif "Building EXE" in line:
-                        self.progress_signal.emit(40, "EXE 빌드 중...")
-                    elif "Cleaning up" in line:
-                        self.progress_signal.emit(80, "정리 중...")
+                    # 30초마다 하트비트 메시지
+                    if building_exe and no_output_count >= 60:  # 0.5초 * 60 = 30초
+                        elapsed = int(time.time() - last_output_time)
+                        self.heartbeat_signal.emit(f"⏳ 빌드 진행 중... (마지막 출력: {elapsed}초 전)")
+                        no_output_count = 0
             
             build_process.wait()
             
@@ -106,13 +157,14 @@ class DeployWorkerThread(QThread):
             # deploy_local.py 실행 (비대화형 모드)
             deploy_env = os.environ.copy()
             deploy_env['DEPLOY_AUTO_MODE'] = '1'  # 자동 모드 플래그
+            deploy_env['PYTHONUNBUFFERED'] = '1'  # Python 출력 버퍼링 비활성화
             
             deploy_process = subprocess.Popen(
-                [sys.executable, 'deploy_local.py'],
+                [sys.executable, '-u', 'deploy_local.py'],  # -u: unbuffered 모드
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1,
+                bufsize=0,  # 버퍼링 완전 비활성화
                 env=deploy_env,
                 cwd=os.getcwd(),
                 encoding='utf-8',
@@ -250,8 +302,28 @@ class DeployDialog(QDialog):
         settings_layout.addWidget(changelog_label)
         settings_layout.addWidget(self.changelog_input)
         
+        # 빌드 옵션
+        build_options_layout = QHBoxLayout()
+        
+        # 기존 EXE 덮어쓰기 옵션
+        self.force_rebuild_btn = QPushButton("기존 EXE 덮어쓰기")
+        self.force_rebuild_btn.setCheckable(True)
+        self.force_rebuild_btn.setChecked(True)  # 기본값: 덮어쓰기
+        self.force_rebuild_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 5px 10px;
+                border-radius: 5px;
+            }
+            QPushButton:checked {
+                background-color: #1976D2;
+            }
+        """)
+        self.force_rebuild_btn.setToolTip("체크: dist/QuickBuild.exe가 있어도 다시 빌드\n체크 해제: 기존 EXE가 있으면 재사용")
+        build_options_layout.addWidget(self.force_rebuild_btn)
+        
         # GitHub 배포 건너뛰기 옵션
-        skip_layout = QHBoxLayout()
         self.skip_github_btn = QPushButton("로컬 빌드만 (GitHub 배포 건너뛰기)")
         self.skip_github_btn.setCheckable(True)
         self.skip_github_btn.setStyleSheet("""
@@ -265,9 +337,9 @@ class DeployDialog(QDialog):
                 background-color: #FF9800;
             }
         """)
-        skip_layout.addWidget(self.skip_github_btn)
-        skip_layout.addStretch()
-        settings_layout.addLayout(skip_layout)
+        build_options_layout.addWidget(self.skip_github_btn)
+        build_options_layout.addStretch()
+        settings_layout.addLayout(build_options_layout)
         
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
@@ -381,14 +453,17 @@ class DeployDialog(QDialog):
         version_type = self.version_combo.currentData()
         changelog_message = self.changelog_input.toPlainText().strip() or "버그 수정 및 성능 개선"
         skip_github = self.skip_github_btn.isChecked()
+        force_rebuild = self.force_rebuild_btn.isChecked()
         
         # 확인 메시지
+        rebuild_msg = "기존 EXE 덮어쓰기" if force_rebuild else "기존 EXE 재사용"
+        
         if version_type == "test":
-            confirm_msg = "테스트 빌드를 시작하시겠습니까?\n\n버전 변경 없이 빌드만 수행됩니다."
+            confirm_msg = f"테스트 빌드를 시작하시겠습니까?\n\n버전 변경 없이 빌드만 수행됩니다.\n빌드 옵션: {rebuild_msg}"
         elif skip_github:
-            confirm_msg = f"로컬 빌드를 시작하시겠습니까?\n\n버전 타입: {self.version_combo.currentText()}\n변경사항: {changelog_message}\n\n※ GitHub 배포는 건너뜁니다."
+            confirm_msg = f"로컬 빌드를 시작하시겠습니까?\n\n버전 타입: {self.version_combo.currentText()}\n변경사항: {changelog_message}\n빌드 옵션: {rebuild_msg}\n\n※ GitHub 배포는 건너뜁니다."
         else:
-            confirm_msg = f"빌드 및 배포를 시작하시겠습니까?\n\n버전 타입: {self.version_combo.currentText()}\n변경사항: {changelog_message}\n\n※ GitHub에 자동으로 배포됩니다."
+            confirm_msg = f"빌드 및 배포를 시작하시겠습니까?\n\n버전 타입: {self.version_combo.currentText()}\n변경사항: {changelog_message}\n빌드 옵션: {rebuild_msg}\n\n※ GitHub에 자동으로 배포됩니다."
         
         reply = QMessageBox.question(
             self,
@@ -405,6 +480,7 @@ class DeployDialog(QDialog):
         self.start_btn.setEnabled(False)
         self.version_combo.setEnabled(False)
         self.changelog_input.setEnabled(False)
+        self.force_rebuild_btn.setEnabled(False)
         self.skip_github_btn.setEnabled(False)
         self.close_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
@@ -415,10 +491,11 @@ class DeployDialog(QDialog):
         self.status_label.setText("시작 중...")
         
         # 워커 스레드 생성 및 시작
-        self.worker = DeployWorkerThread(version_type, changelog_message, skip_github)
+        self.worker = DeployWorkerThread(version_type, changelog_message, skip_github, force_rebuild)
         self.worker.log_signal.connect(self.append_log)
         self.worker.progress_signal.connect(self.update_progress)
         self.worker.finished_signal.connect(self.on_finished)
+        self.worker.heartbeat_signal.connect(self.on_heartbeat)
         self.worker.start()
     
     def cancel_deploy(self):
@@ -441,6 +518,7 @@ class DeployDialog(QDialog):
                 self.start_btn.setEnabled(True)
                 self.version_combo.setEnabled(True)
                 self.changelog_input.setEnabled(True)
+                self.force_rebuild_btn.setEnabled(True)
                 self.skip_github_btn.setEnabled(True)
                 self.close_btn.setEnabled(True)
                 self.cancel_btn.setEnabled(False)
@@ -458,12 +536,18 @@ class DeployDialog(QDialog):
         self.progress_bar.setValue(value)
         self.status_label.setText(status)
     
+    def on_heartbeat(self, message):
+        """하트비트 메시지 (프로세스 살아있음 확인)"""
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet("color: #FF9800; padding: 5px; font-style: italic;")
+    
     def on_finished(self, success, message):
         """배포 완료"""
         # UI 상태 복원
         self.start_btn.setEnabled(True)
         self.version_combo.setEnabled(True)
         self.changelog_input.setEnabled(True)
+        self.force_rebuild_btn.setEnabled(True)
         self.skip_github_btn.setEnabled(True)
         self.close_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
