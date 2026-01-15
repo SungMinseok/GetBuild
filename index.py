@@ -800,6 +800,7 @@ class QuickBuildApp(QMainWindow):
         branch = schedule.get('branch', '')
         src_path = schedule.get('src_path', '')
         dest_path = schedule.get('dest_path', '')
+        max_local_copies = schedule.get('max_local_copies', 0)
         
         # 빌드 모드 확인: 'latest' 또는 'fixed'
         build_mode = schedule.get('build_mode', 'latest')
@@ -820,7 +821,7 @@ class QuickBuildApp(QMainWindow):
                 return
         
         # 실행할 함수 결정
-        task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path)
+        task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path, max_local_copies)
         
         # 워커 스레드 생성 (Debug 모드이면 stdout 캡처)
         worker = ScheduleWorkerThread(schedule, task_func, capture_stdout=self.debug_mode)
@@ -890,6 +891,89 @@ class QuickBuildApp(QMainWindow):
 
         print(f"[find_latest_build] Found {len(matching_folders)} matching folders, latest: {latest_folder}")
         return latest_folder
+    
+    def force_remove_readonly(self, func, path, exc_info):
+        """
+        읽기 전용 파일 강제 삭제를 위한 오류 핸들러
+        
+        Args:
+            func: 실패한 함수
+            path: 파일/폴더 경로
+            exc_info: 예외 정보
+        """
+        import stat
+        
+        # 읽기 전용 속성 제거
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception as e:
+            print(f"[force_remove_readonly] 강제 삭제 실패: {path} - {e}")
+    
+    def cleanup_old_builds(self, dest_folder: str, max_copies: int):
+        """
+        로컬 경로에서 오래된 빌드 폴더 정리 (강제 삭제 포함)
+        
+        Args:
+            dest_folder: 로컬 저장 경로 (예: C:/mybuild)
+            max_copies: 최대 보관 개수 (0이면 정리 안 함)
+        """
+        if max_copies <= 0:
+            return
+        
+        if not os.path.isdir(dest_folder):
+            return
+        
+        try:
+            # dest_folder 내의 모든 폴더 목록 가져오기
+            folders = []
+            for item in os.listdir(dest_folder):
+                item_path = os.path.join(dest_folder, item)
+                if os.path.isdir(item_path):
+                    # 폴더의 수정 시간 가져오기
+                    mtime = os.path.getmtime(item_path)
+                    folders.append((item, item_path, mtime))
+            
+            # 수정 시간 기준 정렬 (오래된 것부터)
+            folders.sort(key=lambda x: x[2])
+            
+            # 현재 개수가 max_copies 이상이면 오래된 것부터 삭제
+            if len(folders) >= max_copies:
+                # 삭제할 개수 계산 (새로 추가될 1개를 위해 공간 확보)
+                to_delete_count = len(folders) - max_copies + 1
+                
+                for i in range(to_delete_count):
+                    folder_name, folder_path, _ = folders[i]
+                    print(f"[cleanup_old_builds] 오래된 빌드 삭제: {folder_name}")
+                    
+                    try:
+                        # 1차 시도: 일반 삭제
+                        shutil.rmtree(folder_path)
+                        print(f"[cleanup_old_builds] 삭제 완료: {folder_name}")
+                    except PermissionError as e:
+                        # 2차 시도: 읽기 전용 속성 제거 후 강제 삭제
+                        print(f"[cleanup_old_builds] 권한 오류 발생, 강제 삭제 시도: {folder_name}")
+                        try:
+                            shutil.rmtree(folder_path, onerror=self.force_remove_readonly)
+                            print(f"[cleanup_old_builds] 강제 삭제 완료: {folder_name}")
+                        except Exception as e2:
+                            print(f"[cleanup_old_builds] 강제 삭제 실패: {folder_name} - {e2}")
+                            # 3차 시도: Windows attrib 명령어 사용
+                            try:
+                                print(f"[cleanup_old_builds] attrib 명령어로 재시도: {folder_name}")
+                                # 읽기 전용 속성 제거 (재귀적으로)
+                                os.system(f'attrib -R "{folder_path}\\*.*" /S /D')
+                                time.sleep(0.5)
+                                shutil.rmtree(folder_path)
+                                print(f"[cleanup_old_builds] attrib 명령어로 삭제 완료: {folder_name}")
+                            except Exception as e3:
+                                print(f"[cleanup_old_builds] 최종 삭제 실패: {folder_name} - {e3}")
+                                print(f"[cleanup_old_builds] 수동 삭제 필요: {folder_path}")
+                    except Exception as e:
+                        print(f"[cleanup_old_builds] 삭제 실패: {folder_name} - {e}")
+        
+        except Exception as e:
+            print(f"[cleanup_old_builds] 오류: {e}")
     
     def copy_folder_direct(self, src_folder: str, dest_folder: str, target_folder: str, target_name: str) -> str:
         """
@@ -986,7 +1070,7 @@ class QuickBuildApp(QMainWindow):
         return result
     
     def execute_option(self, option: str, buildname: str, awsurl: str, branch: str, 
-                      src_path: str = '', dest_path: str = '') -> str:
+                      src_path: str = '', dest_path: str = '', max_local_copies: int = 0) -> str:
         """
         실행 옵션 처리 (실제 작업)
         이 함수는 QThread 내에서 실행됩니다.
@@ -995,6 +1079,7 @@ class QuickBuildApp(QMainWindow):
             buildname: 빌드명 (Prefix 또는 전체 빌드명)
                 - 짧은 이름(예: game_SEL): find_latest_build로 최신 빌드 찾음
                 - 전체 빌드명(예: CompileBuild_DEV_game_SEL_...): 그대로 사용
+            max_local_copies: 로컬 경로에 저장할 최대 빌드 개수 (0이면 제한 없음)
         """
         log_execution()  # 실행 로그
         
@@ -1048,6 +1133,11 @@ Branch: {branch}
                 full_buildname = get_full_buildname(buildname)
                 print(f"[execute_option] 클라복사 - full_buildname: {full_buildname}")
                 
+                # 오래된 빌드 정리 (max_local_copies가 설정되어 있으면)
+                if max_local_copies > 0:
+                    print(f"[execute_option] 최대 경로 개수 제한: {max_local_copies}개")
+                    self.cleanup_old_builds(dest_folder, max_local_copies)
+                
                 # 실제 클라이언트 복사 로직
                 result = self.copy_folder_direct(src_folder, dest_folder, full_buildname, 'WindowsClient')
                 return f"클라복사 완료: {full_buildname} ({result})"
@@ -1056,6 +1146,11 @@ Branch: {branch}
                 full_buildname = get_full_buildname(buildname)
                 print(f"[execute_option] 서버복사 - full_buildname: {full_buildname}")
                 
+                # 오래된 빌드 정리 (max_local_copies가 설정되어 있으면)
+                if max_local_copies > 0:
+                    print(f"[execute_option] 최대 경로 개수 제한: {max_local_copies}개")
+                    self.cleanup_old_builds(dest_folder, max_local_copies)
+                
                 # 실제 서버 복사 로직
                 result = self.copy_folder_direct(src_folder, dest_folder, full_buildname, 'WindowsServer')
                 return f"서버복사 완료: {full_buildname} ({result})"
@@ -1063,6 +1158,11 @@ Branch: {branch}
             elif option == "전체복사":
                 full_buildname = get_full_buildname(buildname)
                 print(f"[execute_option] 전체복사 - full_buildname: {full_buildname}")
+                
+                # 오래된 빌드 정리 (max_local_copies가 설정되어 있으면)
+                if max_local_copies > 0:
+                    print(f"[execute_option] 최대 경로 개수 제한: {max_local_copies}개")
+                    self.cleanup_old_builds(dest_folder, max_local_copies)
                 
                 # 실제 전체 복사 로직
                 result = self.copy_folder_direct(src_folder, dest_folder, full_buildname, '')

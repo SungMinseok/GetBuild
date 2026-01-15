@@ -181,6 +181,22 @@ class ScheduleDialog(QDialog):
         dest_layout.addWidget(dest_browse_btn)
         layout.addRow("로컬 경로:", dest_layout)
         
+        # 최대 경로 개수 (디스크 용량 관리)
+        max_copies_layout = QHBoxLayout()
+        self.max_copies_edit = QLineEdit()
+        self.max_copies_edit.setPlaceholderText("0 (제한 없음)")
+        self.max_copies_edit.setFixedWidth(100)
+        self.max_copies_edit.setToolTip(
+            "로컬 경로에 저장할 최대 빌드 개수\n"
+            "예: 3 입력 시, 3개까지만 저장되고\n"
+            "4번째 실행 시 가장 오래된 1개가 삭제됩니다.\n"
+            "0 또는 비워두면 제한 없음"
+        )
+        max_copies_layout.addWidget(self.max_copies_edit)
+        max_copies_layout.addWidget(QLabel("(0 = 제한 없음)"))
+        max_copies_layout.addStretch()
+        layout.addRow("최대 경로 개수:", max_copies_layout)
+        
         # 빌드 선택 모드: 최신 / 지정
         mode_layout = QHBoxLayout()
         self.build_mode_group = QButtonGroup()
@@ -826,6 +842,11 @@ class ScheduleDialog(QDialog):
         if dest_path:
             self.dest_path_edit.setText(dest_path)
         
+        # 최대 경로 개수
+        max_local_copies = self.schedule.get('max_local_copies', 0)
+        if max_local_copies > 0:
+            self.max_copies_edit.setText(str(max_local_copies))
+        
         # 빌드 모드 (최신 / 지정)
         build_mode = self.schedule.get('build_mode', 'latest')
         if build_mode == 'fixed':
@@ -967,12 +988,24 @@ class ScheduleDialog(QDialog):
         # webhook은 더 이상 사용하지 않지만 호환성을 위해 빈 값 저장
         slack_webhook = ''
         
+        # 최대 경로 개수 파싱
+        max_local_copies = 0
+        max_copies_text = self.max_copies_edit.text().strip()
+        if max_copies_text:
+            try:
+                max_local_copies = int(max_copies_text)
+                if max_local_copies < 0:
+                    max_local_copies = 0
+            except ValueError:
+                max_local_copies = 0
+        
         data = {
             'name': name,
             'time': self.time_edit.time().toString('HH:mm'),
             'option': self.option_combo.currentText(),
             'src_path': self.src_path_edit.text().strip(),
             'dest_path': self.dest_path_edit.text().strip(),
+            'max_local_copies': max_local_copies,
             'build_mode': build_mode,
             'prefix': self.prefix_edit.text().strip(),
             'buildname': self.buildname_combo.currentText(),
