@@ -883,6 +883,47 @@ ChromeDriver 버전: {chromedriver_version}
                     ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
                     ok_button.click()
                     print("[update_server_container] [확인] ✅ 팝업 OK 버튼 클릭 완료")
+                    time.sleep(5)
+                    
+                    # 첫 번째 탭 클릭
+                    try:
+                        print("[update_server_container] [완료 단계 1/3] 첫 번째 탭 클릭")
+                        first_tab = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
+                        first_tab.click()
+                        time.sleep(0.5)
+                        print("[update_server_container] [완료 단계 1/3] ✅ 첫 번째 탭 클릭 완료")
+                    except TimeoutException as e:
+                        raise Exception(f"[완료 단계 1/2 실패] 첫 번째 탭을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a")
+                    
+                    # Update with Sync 버튼 클릭
+                    try:
+                        print("[update_server_container] [완료 단계 2/3] Update with Sync 버튼 클릭")
+                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button')))
+                        final_button.click()
+                        time.sleep(0.5)
+                        print("[update_server_container] [완료 단계 2/3] ✅ Update with Sync 버튼 클릭 완료")
+                    except TimeoutException as e:
+                        raise Exception(f"[완료 단계 2/2 실패] 최종 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button")
+                    
+                    #아래가 진짜 최종 버튼 OK /html/body/div[3]/div[1]/div[2]/div/button[1]
+                    try:
+                        print("[update_server_container] [완료 단계 3/3] Update with Sync OK 버튼 클릭")
+                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        final_button.click()
+                        time.sleep(0.5)
+                        print("[update_server_container] [완료 단계 3/3] ✅ Update with Sync OK 버튼 클릭 완료")
+                    except TimeoutException as e:
+                        raise Exception(f"[완료 단계 3/3 실패] 최종 버튼을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/button[1]")
+
+                    #아래가 진짜 최종 OK /html/body/div[3]/div[1]/div[2]/div/button[1]
+                    try:
+                        print("[update_server_container] [완료 단계 4/4] 최종 OK 버튼 클릭")
+                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        final_button.click()
+                        time.sleep(0.5)
+                        print("[update_server_container] [완료 단계 4/4] ✅ 최종 OK 버튼 클릭 완료")
+                    except TimeoutException as e:
+                        raise Exception(f"[완료 단계 4/4 실패] 최종 OK 버튼을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/button[1]")
                     try:
                         export_upload_result(aws_link, full_build_name, "aws_apply", ":update_done:")
                     except:

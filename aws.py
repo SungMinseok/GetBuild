@@ -288,6 +288,9 @@ def aws_update_container(driver,revision, aws_link, branch = 'game', buildType =
             #팝업 내 OK 버튼 클릭
             time.sleep(0.5)
             driver.find_element(By.XPATH,'/html/body/div[3]/div[1]/div[2]/div/button[1]').click()
+            time.sleep(0.5)
+            #마지막 버튼 클릭
+            driver.find_element(By.XPATH,'/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button').click()
             try:
                 export_upload_result(aws_link,full_build_name,"aws_apply",":update_done:")
             except:
