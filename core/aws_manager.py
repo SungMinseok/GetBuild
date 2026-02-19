@@ -142,14 +142,154 @@ class AWSManager:
             os.makedirs(driver_dir)
             print(f"[get_driver_dir] driver 폴더 생성: {driver_dir}")
         return driver_dir
+
+    @staticmethod
+    def get_chrome_version():
+        """시스템에 설치된 Chrome 버전 확인
+
+        Returns:
+            str: Chrome 버전 문자열 (예: "131.0.6778.86") 또는 None
+        """
+        chrome_paths = [
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
+        ]
+
+        for chrome_path in chrome_paths:
+            if os.path.exists(chrome_path):
+                try:
+                    # wmic 명령어로 버전 확인
+                    escaped_path = chrome_path.replace('\\', '\\\\')
+                    result = subprocess.run(
+                        ['wmic', 'datafile', 'where', f'name="{escaped_path}"', 'get', 'Version', '/value'],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    for line in result.stdout.split('\n'):
+                        if 'Version=' in line:
+                            version = line.split('=')[1].strip()
+                            if version:
+                                print(f"[get_chrome_version] 시스템 Chrome 버전: {version}")
+                                return version
+                except Exception as e:
+                    print(f"[get_chrome_version] 버전 확인 실패: {e}")
+
+        print("[get_chrome_version] Chrome을 찾을 수 없습니다.")
+        return None
+
+    @staticmethod
+    def get_chromedriver_major_version(chromedriver_path):
+        """ChromeDriver 경로에서 메이저 버전 추출
+
+        Args:
+            chromedriver_path: ChromeDriver 실행 파일 경로
+
+        Returns:
+            str: 메이저 버전 (예: "144") 또는 None
+        """
+        try:
+            version_str = os.path.basename(os.path.dirname(chromedriver_path))
+            return version_str.split('.')[0]
+        except:
+            return None
+
+    @staticmethod
+    def is_chromedriver_compatible():
+        """현재 ChromeDriver가 Chrome과 호환되는지 확인
+
+        Chrome과 ChromeDriver는 메이저 버전이 일치해야 함
+        예: Chrome 144.x.x.x → ChromeDriver 144.x.x.x 필요
+
+        Returns:
+            tuple: (is_compatible: bool, chrome_version: str, driver_version: str, chromedriver_path: str)
+        """
+        chrome_version = AWSManager.get_chrome_version()
+        if not chrome_version:
+            return (True, None, None, None)  # Chrome 버전 확인 불가 시 호환 가정
+
+        chrome_major = chrome_version.split('.')[0]
+
+        try:
+            chromedriver_path = AWSManager.get_chromedriver_path()
+            driver_version = os.path.basename(os.path.dirname(chromedriver_path))
+            driver_major = driver_version.split('.')[0]
+
+            is_compatible = (driver_major == chrome_major)
+            print(f"[is_chromedriver_compatible] Chrome: {chrome_major}, ChromeDriver: {driver_major}, 호환: {is_compatible}")
+            return (is_compatible, chrome_version, driver_version, chromedriver_path)
+        except FileNotFoundError:
+            return (False, chrome_version, None, None)  # ChromeDriver 없음
+
+    @staticmethod
+    def cleanup_old_chromedrivers(keep_version=None, progress_callback=None):
+        """구버전 ChromeDriver 폴더 삭제
+
+        Args:
+            keep_version: 유지할 버전 (None이면 모두 삭제)
+            progress_callback: 진행 상황 콜백 함수
+
+        Returns:
+            list: 삭제된 버전 목록
+        """
+        def log(msg):
+            print(msg)
+            if progress_callback:
+                progress_callback(msg)
+
+        driver_dir = AWSManager.get_driver_dir()
+        deleted_versions = []
+        failed_versions = []
+
+        if not os.path.exists(driver_dir):
+            return deleted_versions
+
+        # 삭제 전 ChromeDriver 프로세스 종료 시도
+        log("[cleanup] ChromeDriver 프로세스 종료 시도...")
+        AWSManager.kill_all_chromedrivers()
+        time.sleep(1)  # 프로세스 종료 대기
+
+        for item in os.listdir(driver_dir):
+            item_path = os.path.join(driver_dir, item)
+            if os.path.isdir(item_path):
+                # 유지할 버전이 아니면 삭제
+                if keep_version is None or item != keep_version:
+                    try:
+                        # 먼저 파일 권한 문제 해결 시도
+                        for root, dirs, files in os.walk(item_path):
+                            for f in files:
+                                try:
+                                    os.chmod(os.path.join(root, f), 0o777)
+                                except:
+                                    pass
+                        shutil.rmtree(item_path)
+                        deleted_versions.append(item)
+                        log(f"[cleanup] 구버전 삭제됨: {item}")
+                    except PermissionError as e:
+                        failed_versions.append(item)
+                        log(f"[cleanup] 삭제 실패 ({item}): 파일 사용 중 - 수동 삭제 필요")
+                    except Exception as e:
+                        failed_versions.append(item)
+                        log(f"[cleanup] 삭제 실패 ({item}): {e}")
+
+        if deleted_versions:
+            log(f"[cleanup] {len(deleted_versions)}개 구버전 삭제 완료")
+        if failed_versions:
+            log(f"[cleanup] {len(failed_versions)}개 삭제 실패 (수동 삭제 필요: {', '.join(failed_versions)})")
+        if not deleted_versions and not failed_versions:
+            log("[cleanup] 삭제할 구버전 없음")
+
+        return deleted_versions
     
     @staticmethod
     def download_latest_chromedriver(progress_callback=None):
         """최신 ChromeDriver 다운로드 및 설치 (chromedriver_autoinstaller 사용)
-        
+
+        - 시스템 Chrome 버전에 맞는 ChromeDriver 자동 다운로드
+        - 설치 성공 시 구버전 자동 삭제
+        - chromedriver_autoinstaller 캐시 무시하고 강제 재설치
+
         Args:
             progress_callback: 진행 상황 콜백 함수 (message: str) -> None
-        
+
         Returns:
             str: 설치된 ChromeDriver 경로
         """
@@ -157,51 +297,129 @@ class AWSManager:
             print(msg)
             if progress_callback:
                 progress_callback(msg)
-        
+
         try:
             log("[ChromeDriver 다운로드] 시작...")
-            log("[1/3] chromedriver_autoinstaller 사용하여 자동 설치 중...")
-            
+
+            # 0. 먼저 모든 ChromeDriver 프로세스 종료
+            log("[0/5] ChromeDriver 프로세스 종료 중...")
+            killed = AWSManager.kill_all_chromedrivers()
+            if killed > 0:
+                log(f"[0/5] {killed}개 ChromeDriver 프로세스 종료됨")
+                time.sleep(2)  # 프로세스 완전 종료 대기
+
+            # 1. 시스템 Chrome 버전 확인
+            chrome_version = AWSManager.get_chrome_version()
+            if chrome_version:
+                log(f"[1/5] 시스템 Chrome 버전: {chrome_version}")
+            else:
+                log("[1/5] [경고] 시스템 Chrome 버전을 확인할 수 없습니다.")
+
             import chromedriver_autoinstaller
-            
+
+            # 2. chromedriver_autoinstaller 캐시 삭제하여 강제 재설치
+            log("[2/5] chromedriver_autoinstaller 캐시 확인 중...")
+            try:
+                # chromedriver_autoinstaller의 캐시 경로 확인 및 삭제
+                import chromedriver_autoinstaller.utils as cda_utils
+                chrome_major_version = cda_utils.get_chrome_version()
+                if chrome_major_version:
+                    log(f"[2/5] Chrome 메이저 버전: {chrome_major_version}")
+                    # 캐시 폴더 삭제하여 강제 재다운로드
+                    cda_cache_path = os.path.join(os.path.dirname(chromedriver_autoinstaller.__file__), chrome_major_version)
+                    if os.path.exists(cda_cache_path):
+                        shutil.rmtree(cda_cache_path)
+                        log(f"[2/5] 캐시 삭제됨: {cda_cache_path}")
+            except Exception as cache_err:
+                log(f"[2/5] 캐시 삭제 건너뜀: {cache_err}")
+
             # driver 폴더를 chromedriver 설치 경로로 지정
             driver_dir = AWSManager.get_driver_dir()
-            
-            # 기존 chromedriver_autoinstaller는 자체 경로에 설치하므로
-            # 일단 자동 설치하고 나중에 복사
-            log("[2/3] ChromeDriver 다운로드 및 설치 중...")
+
+            # 3. ChromeDriver 다운로드 및 설치
+            log("[3/5] ChromeDriver 다운로드 및 설치 중...")
             installed_path = chromedriver_autoinstaller.install(cwd=True)
-            
+
             if not installed_path or not os.path.exists(installed_path):
                 raise Exception("ChromeDriver 자동 설치 실패")
-            
-            log(f"[2/3] ChromeDriver 설치됨: {installed_path}")
-            
+
+            log(f"[3/5] ChromeDriver 설치됨: {installed_path}")
+
             # 버전 정보 추출 (경로에서)
             # 예: C:\Users\...\131.0.6778.86\chromedriver.exe
             installed_dir = os.path.dirname(installed_path)
             version = os.path.basename(installed_dir)
-            
+
             # driver 폴더로 복사
             target_dir = os.path.join(driver_dir, version)
-            
-            if os.path.exists(target_dir):
-                log(f"[3/3] 기존 버전 제거: {target_dir}")
-                shutil.rmtree(target_dir)
-            
-            log(f"[3/3] driver 폴더로 복사: {target_dir}")
-            shutil.copytree(installed_dir, target_dir)
-            
             final_driver_path = os.path.join(target_dir, 'chromedriver.exe')
-            
-            log(f"✅ ChromeDriver 설치 완료!")
+
+            # 4. 동일 버전 폴더가 있으면 확인
+            need_copy = True
+            if os.path.exists(target_dir):
+                if os.path.exists(final_driver_path):
+                    log(f"[4/5] 동일 버전 이미 존재, 기존 파일 사용: {target_dir}")
+                    need_copy = False
+                else:
+                    # 폴더는 있지만 chromedriver.exe가 없는 경우 삭제 후 재설치
+                    log(f"[4/5] 동일 버전 폴더 불완전, 재설치 시도: {target_dir}")
+                    deleted = False
+                    for retry in range(3):
+                        try:
+                            shutil.rmtree(target_dir)
+                            deleted = True
+                            break
+                        except PermissionError:
+                            if retry < 2:
+                                log(f"[4/5] 삭제 실패, 재시도 중... ({retry + 1}/3)")
+                                AWSManager.kill_all_chromedrivers()
+                                time.sleep(2)
+                            else:
+                                log(f"[4/5] 삭제 실패")
+
+                    if not deleted:
+                        # 삭제 실패해도 폴더 안에 직접 파일 복사 시도
+                        log(f"[4/5] 폴더 삭제 실패, 파일 직접 복사 시도")
+                        try:
+                            src_exe = os.path.join(installed_dir, 'chromedriver.exe')
+                            shutil.copy2(src_exe, final_driver_path)
+                            need_copy = False
+                            log(f"[4/5] chromedriver.exe 직접 복사 완료")
+                        except Exception as e:
+                            log(f"[4/5] 직접 복사 실패: {e}")
+                            raise Exception(f"ChromeDriver 설치 실패: {target_dir} 폴더 삭제/복사 불가")
+
+            if need_copy:
+                log(f"[4/5] driver 폴더로 복사: {target_dir}")
+                shutil.copytree(installed_dir, target_dir)
+
+            # 5. 구버전 자동 삭제
+            log("[5/5] 구버전 ChromeDriver 정리 중...")
+            deleted_versions = AWSManager.cleanup_old_chromedrivers(keep_version=version, progress_callback=progress_callback)
+
+            # 루트 폴더의 chromedriver 캐시 폴더도 정리 (chromedriver_autoinstaller가 생성한 폴더)
+            base_path = AWSManager.get_base_path()
+            for item in os.listdir(base_path):
+                item_path = os.path.join(base_path, item)
+                if os.path.isdir(item_path) and item.isdigit():
+                    # chromedriver.exe가 있는 폴더만 삭제 (chromedriver 캐시 폴더)
+                    if os.path.exists(os.path.join(item_path, 'chromedriver.exe')):
+                        try:
+                            shutil.rmtree(item_path)
+                            log(f"[정리] 루트 캐시 삭제됨: {item}")
+                        except Exception as e:
+                            log(f"[정리] 루트 캐시 삭제 실패 ({item}): 수동 삭제 필요")
+
+            log(f"[완료] ChromeDriver 설치 완료!")
             log(f"   버전: {version}")
             log(f"   경로: {final_driver_path}")
-            
+            if deleted_versions:
+                log(f"   삭제된 구버전: {', '.join(deleted_versions)}")
+
             return final_driver_path
-            
+
         except Exception as e:
-            error_msg = f"❌ ChromeDriver 다운로드 실패: {e}"
+            error_msg = f"[실패] ChromeDriver 다운로드 실패: {e}"
             log(error_msg)
             raise Exception(error_msg)
     
@@ -297,13 +515,15 @@ class AWSManager:
                             # 버전 파싱 실패 시 0으로 처리
                             chrome_driver_dirs.append((0, driver_exe, item))
         
-        # 2. 루트 폴더 내 숫자 폴더 확인 (하위 호환성)
+        # 2. 루트 폴더 내 숫자 폴더 확인 (하위 호환성 - 낮은 우선순위)
+        # driver 폴더가 우선이므로, 루트 폴더의 버전은 더 낮은 우선순위 부여
         for item in os.listdir(base_path):
             item_path = os.path.join(base_path, item)
             if os.path.isdir(item_path) and item.isdigit():
                 driver_exe = os.path.join(item_path, 'chromedriver.exe')
                 if os.path.isfile(driver_exe):
-                    version_number = int(item) * 1000000000  # 높은 우선순위 유지
+                    # 하위 호환성용 - driver 폴더보다 낮은 우선순위
+                    version_number = int(item)  # 단순 버전 번호만 사용
                     chrome_driver_dirs.append((version_number, driver_exe, item))
         
         if chrome_driver_dirs:
@@ -414,7 +634,7 @@ class AWSManager:
         
         if chrome_for_testing:
             chrome_executable_path = chrome_for_testing
-            print(f"[start_driver] ✅ Chrome for Testing 사용 (버전 {chromedriver_version})")
+            print(f"[start_driver] [성공] Chrome for Testing 사용 (버전 {chromedriver_version})")
             print(f"[start_driver] Chrome 경로: {chrome_executable_path}")
         else:
             # 2. 시스템 Chrome 사용 (백업)
@@ -444,7 +664,7 @@ ChromeDriver 버전: {chromedriver_version}
                     raise FileNotFoundError(error_msg)
             
             chrome_executable_path = system_chrome
-            print(f"[start_driver] ⚠️ 시스템 Chrome 사용 (버전 불일치 가능)")
+            print(f"[start_driver] [경고] 시스템 Chrome 사용 (버전 불일치 가능)")
             print(f"[start_driver] Chrome 경로: {chrome_executable_path}")
             print(f"[start_driver] ChromeDriver 버전 {chromedriver_version}과 일치하지 않으면 오류가 발생할 수 있습니다.")
         
@@ -453,7 +673,7 @@ ChromeDriver 버전: {chromedriver_version}
             print("[start_driver] 기존 Chrome 디버깅 세션 확인 중...")
             response = requests.get(chrome_debugging_address, timeout=5)
             if response.status_code == 200:
-                print("[start_driver] ✅ 기존 Chrome 세션 발견, 연결 중... (로그인 캐시 유지)")
+                print("[start_driver] [성공] 기존 Chrome 세션 발견, 연결 중... (로그인 캐시 유지)")
                 chrome_options = Options()
                 chrome_options.debugger_address = "127.0.0.1:9222"
                 
@@ -469,21 +689,21 @@ ChromeDriver 버전: {chromedriver_version}
                     return driver
                 except Exception as e:
                     # 기존 세션 연결 실패 시 Chrome 종료 후 재시작
-                    print(f"[start_driver] ⚠️ 기존 Chrome 세션 연결 실패: {e}")
+                    print(f"[start_driver] [경고] 기존 Chrome 세션 연결 실패: {e}")
                     print("[start_driver] Chrome 프로세스 종료 후 새로 시작합니다...")
                     os.system('taskkill /F /IM chrome.exe /T 2>nul')
                     time.sleep(3)
         except requests.ConnectionError:
             print("[start_driver] 기존 Chrome 세션 없음, 새로 시작...")
         except requests.Timeout:
-            print("[start_driver] ⚠️ Chrome 디버깅 포트 응답 없음 (타임아웃), 새로 시작...")
+            print("[start_driver] [경고] Chrome 디버깅 포트 응답 없음 (타임아웃), 새로 시작...")
         except Exception as e:
             print(f"[start_driver] 기존 Chrome 연결 오류: {e}")
         
         # 새로 시작
         print(f"[start_driver] Chrome 브라우저 실행: {chrome_executable_path}")
         print(f"[start_driver] 사용자 데이터 디렉터리: {chrome_user_data_dir}")
-        print(f"[start_driver] 💡 로그인 정보는 {chrome_user_data_dir}에 저장됩니다.")
+        print(f"[start_driver] [정보] 로그인 정보는 {chrome_user_data_dir}에 저장됩니다.")
         
         # Chrome 실행 옵션 설정
         chrome_args = [
@@ -517,14 +737,14 @@ ChromeDriver 버전: {chromedriver_version}
             
             # Selenium 타임아웃 설정 증가
             driver = webdriver.Chrome(service=service, options=chrome_options)
-            print("[start_driver] ✅ WebDriver 연결 성공")
+            print("[start_driver] [성공] WebDriver 연결 성공")
         except Exception as e:
             error_msg = str(e)
-            print(f"[start_driver] ❌ WebDriver 연결 실패: {error_msg}")
+            print(f"[start_driver] [실패] WebDriver 연결 실패: {error_msg}")
             
             # 타임아웃인 경우 추가 정보 제공
             if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                print("[start_driver] 💡 해결 방법:")
+                print("[start_driver] [팁] 해결 방법:")
                 print("  1. Chrome 프로세스를 수동으로 종료하세요 (작업 관리자)")
                 print("  2. ChromeDriver 프로세스를 종료하세요")
                 print("  3. C:\\ChromeTEMP 폴더를 삭제하고 재시도하세요")
@@ -538,7 +758,7 @@ ChromeDriver 버전: {chromedriver_version}
         driver.switch_to.window(new_tab)
         
         print("[start_driver] Chrome 드라이버 시작 완료")
-        print("[start_driver] 💡 팁: 이 Chrome 창을 닫지 않고 유지하면 다음 실행 시 로그인 상태가 유지됩니다.")
+        print("[start_driver] [팁] 이 Chrome 창을 닫지 않고 유지하면 다음 실행 시 로그인 상태가 유지됩니다.")
         return driver
     
     @staticmethod
@@ -769,6 +989,9 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 print(f"[update_server_container] [단계 3/11] 브랜치 입력 필드 대기 중... (브랜치: {branch})")
                 branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                # 입력 가능할 때까지 추가 대기
+                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                branch_input.clear()
                 branch_input.send_keys(branch)
                 time.sleep(1.5)
                 print(f"[update_server_container] [단계 3/11] ✅ 브랜치 '{branch}' 입력 완료")
@@ -813,6 +1036,9 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 print(f"[update_server_container] [단계 6/11] TAG 입력 필드 대기 중... (TAG: {full_build_name})")
                 tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                # 입력 가능할 때까지 추가 대기
+                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                tag_input.clear()
                 tag_input.send_keys(full_build_name)
                 time.sleep(1)
                 print(f"[update_server_container] [단계 6/11] ✅ TAG '{full_build_name}' 입력 완료")
@@ -827,7 +1053,7 @@ ChromeDriver 버전: {chromedriver_version}
                 time.sleep(1)
                 print("[update_server_container] [단계 7/11] ✅ TAG 선택 완료")
             except TimeoutException as e:
-                raise Exception(f"[단계 7/11 실패] TAG 목록에서 첫 번째 항목을 찾을 수 없습니다. TAG '{full_build_name}'가 존재하는지 확인하세요. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span")
+                raise Exception(f"[단계 7/11 실패] 해당 서버가 업로드 되지 않았습니다.\n{full_build_name}")
             
             # Next 버튼 (TAG)
             try:
@@ -883,12 +1109,23 @@ ChromeDriver 버전: {chromedriver_version}
                     ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
                     ok_button.click()
                     print("[update_server_container] [확인] ✅ 팝업 OK 버튼 클릭 완료")
-                    time.sleep(5)
+                    time.sleep(10)
                     
                     # 첫 번째 탭 클릭
                     try:
                         print("[update_server_container] [완료 단계 1/3] 첫 번째 탭 클릭")
-                        first_tab = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
+                        first_tab = None
+                        for attempt in range(10):
+                            try:
+                                first_tab = WebDriverWait(driver, 1).until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
+                                break
+                            except TimeoutException:
+                                print(f"[update_server_container] [완료 단계 1/3] 첫 번째 탭 대기 중... ({attempt + 1}/10)")
+                                time.sleep(1)
+                        
+                        if first_tab is None:
+                            raise TimeoutException("[완료 단계 1/3] 첫 번째 탭을 10초 동안 찾을 수 없습니다.")
+                        
                         first_tab.click()
                         time.sleep(0.5)
                         print("[update_server_container] [완료 단계 1/3] ✅ 첫 번째 탭 클릭 완료")

@@ -13,7 +13,11 @@ def export_upload_result(aws_link, full_build_name, option=None, result=None):
 
     # 오늘 날짜로 파일명 생성 (예: getbuild_result_250728.csv)
     today_str = datetime.now().strftime("%y%m%d")
-    csv_path = f"getbuild_result_{today_str}.csv"
+    # result 폴더가 없으면 생성
+    result_dir = "result"
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+    csv_path = os.path.join(result_dir, f"getbuild_result_{today_str}.csv")
 
     # 모든 옵션 열
     option_fields = ["client_copy", "server_copy", "all_copy", "aws_upload", "aws_apply", "make_build", "test"]

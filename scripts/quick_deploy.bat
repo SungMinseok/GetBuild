@@ -14,9 +14,9 @@ REM 1. 버전 업데이트
 echo [1/3] 버전 업데이트 중...
 set /p changelog="변경사항 메시지 입력 (엔터만 누르면 기본 메시지): "
 if "%changelog%"=="" (
-    python update_version.py
+    python scripts\update_version.py
 ) else (
-    python update_version.py "%changelog%"
+    python scripts\update_version.py "%changelog%"
 )
 if errorlevel 1 (
     echo 버전 업데이트 실패!
@@ -27,7 +27,7 @@ echo.
 
 REM 2. 빌드
 echo [2/3] 빌드 중...
-python build_release.py
+python scripts\build_release.py
 if errorlevel 1 (
     echo 빌드 실패!
     pause

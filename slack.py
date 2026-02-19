@@ -473,8 +473,9 @@ def send_message_with_bot_token(bot_token: str, channel_id: str,
         return False
 
 
-def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str, 
-                     message: str, title: Optional[str] = None) -> bool:
+def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str,
+                     message: str, title: Optional[str] = None,
+                     reply_broadcast: bool = False) -> bool:
     """
     특정 스레드에 댓글로 메시지 전송
     
@@ -496,11 +497,14 @@ def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str,
         if title:
             full_message = f"*{title}*\n{message}"
         
-        response = client.chat_postMessage(
-            channel=channel_id,
-            thread_ts=thread_ts,
-            text=full_message
-        )
+        post_kwargs = {
+            'channel': channel_id,
+            'thread_ts': thread_ts,
+            'text': full_message,
+        }
+        if reply_broadcast:
+            post_kwargs['reply_broadcast'] = True
+        response = client.chat_postMessage(**post_kwargs)
         
         if response['ok']:
             print(f"[Slack] ✅ 스레드 댓글 전송 성공: {response['ts']}")
@@ -620,16 +624,18 @@ def send_schedule_notification(webhook_url: str, schedule_name: str,
         return False
     
     # 알림 타입에 따라 전송 방식 선택
-    if notification_type == 'thread' and thread_keyword:
+    if notification_type in ('thread', 'thread_broadcast') and thread_keyword:
         # 스레드 댓글 알림
-        print(f"[Slack] 스레드 댓글 알림 시도: 키워드='{thread_keyword}'")
-        
+        broadcast = (notification_type == 'thread_broadcast')
+        mode_label = "스레드 댓글(채널에도 전송)" if broadcast else "스레드 댓글"
+        print(f"[Slack] {mode_label} 알림 시도: 키워드='{thread_keyword}'")
+
         # 1. 스레드 찾기
         thread_ts = find_thread_by_keyword(bot_token, channel_id, thread_keyword)
-        
+
         if thread_ts:
             # 2. 스레드에 댓글 달기
-            return send_thread_reply(bot_token, channel_id, thread_ts, message, title)
+            return send_thread_reply(bot_token, channel_id, thread_ts, message, title, reply_broadcast=broadcast)
         else:
             # 스레드를 찾지 못한 경우 단독 알림으로 폴백
             print(f"[Slack] 스레드를 찾지 못해 단독 알림으로 전송합니다.")

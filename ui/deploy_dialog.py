@@ -52,7 +52,7 @@ class DeployWorkerThread(QThread):
             env['BUILD_FORCE_REBUILD'] = '1' if self.force_rebuild else '0'
             
             build_process = subprocess.Popen(
-                [sys.executable, '-u', 'build.py'],  # -u: unbuffered 모드
+                [sys.executable, '-u', 'scripts/build.py'],  # -u: unbuffered 모드
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -160,7 +160,7 @@ class DeployWorkerThread(QThread):
             deploy_env['PYTHONUNBUFFERED'] = '1'  # Python 출력 버퍼링 비활성화
             
             deploy_process = subprocess.Popen(
-                [sys.executable, '-u', 'deploy_local.py'],  # -u: unbuffered 모드
+                [sys.executable, '-u', 'scripts/deploy_local.py'],  # -u: unbuffered 모드
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

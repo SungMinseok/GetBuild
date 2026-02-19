@@ -24,7 +24,7 @@ from ui import ScheduleDialog, ScheduleItemWidget, SettingsDialog
 try:
     from ui.feedback_dialog_slack import FeedbackDialogSlack as FeedbackDialog
 except ImportError:
-    from ui.feedback_dialog import FeedbackDialog
+    FeedbackDialog = None  # 피드백 기능 비활성화
 
 # 기존 모듈 import
 from makelog import log_execution
@@ -801,7 +801,8 @@ class QuickBuildApp(QMainWindow):
         src_path = schedule.get('src_path', '')
         dest_path = schedule.get('dest_path', '')
         max_local_copies = schedule.get('max_local_copies', 0)
-        
+        patch_delay = schedule.get('patch_delay', 30)
+
         # 빌드 모드 확인: 'latest' 또는 'fixed'
         build_mode = schedule.get('build_mode', 'latest')
         prefix = schedule.get('prefix', '')
@@ -821,7 +822,7 @@ class QuickBuildApp(QMainWindow):
                 return
         
         # 실행할 함수 결정
-        task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path, max_local_copies)
+        task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path, max_local_copies, patch_delay, schedule)
         
         # 워커 스레드 생성 (Debug 모드이면 stdout 캡처)
         worker = ScheduleWorkerThread(schedule, task_func, capture_stdout=self.debug_mode)
@@ -1069,17 +1070,19 @@ class QuickBuildApp(QMainWindow):
         
         return result
     
-    def execute_option(self, option: str, buildname: str, awsurl: str, branch: str, 
-                      src_path: str = '', dest_path: str = '', max_local_copies: int = 0) -> str:
+    def execute_option(self, option: str, buildname: str, awsurl: str, branch: str,
+                      src_path: str = '', dest_path: str = '', max_local_copies: int = 0,
+                      patch_delay: int = 30, schedule: dict = None) -> str:
         """
         실행 옵션 처리 (실제 작업)
         이 함수는 QThread 내에서 실행됩니다.
-        
+
         Args:
             buildname: 빌드명 (Prefix 또는 전체 빌드명)
                 - 짧은 이름(예: game_SEL): find_latest_build로 최신 빌드 찾음
                 - 전체 빌드명(예: CompileBuild_DEV_game_SEL_...): 그대로 사용
             max_local_copies: 로컬 경로에 저장할 최대 빌드 개수 (0이면 제한 없음)
+            patch_delay: 서버업로드및패치 시 업로드 후 패치까지 대기 시간 (분)
         """
         log_execution()  # 실행 로그
         
@@ -1299,7 +1302,19 @@ Branch: {branch}
                     teamcity_id=teamcity_id,
                     teamcity_pw=teamcity_pw
                 )
-                
+
+                # 1차 슬랙 알림: 업로드(배포 요청) 완료
+                if schedule:
+                    self.send_slack_notification_if_enabled(schedule, '업로드완료', f"배포 요청 완료: {awsurl}\n{full_buildname}\n패치 대기: {patch_delay}분")
+
+                # 패치 대기시간 (업로드 완료 후 AWS 반영까지 대기)
+                if patch_delay > 0:
+                    print(f"[서버업로드및패치] 패치 대기시간: {patch_delay}분")
+                    for remaining in range(patch_delay, 0, -1):
+                        print(f"[서버업로드및패치] 패치까지 {remaining}분 남음...")
+                        time.sleep(60)  # 1분마다 로그 출력
+                    print("[서버업로드및패치] 대기 완료, 패치 시작")
+
                 # 패치
                 AWSManager.update_server_container(
                     driver=None,
@@ -1442,9 +1457,10 @@ Branch: {branch}
                     return  # 알림 전송 안 함
             
             # 알림 전송
-            if notification_type == 'thread' and thread_keyword:
-                self.log(f"[슬랙 알림] 스레드 댓글 모드: '{thread_keyword}' 검색 중...")
-            
+            if notification_type in ('thread', 'thread_broadcast') and thread_keyword:
+                mode_label = "스레드 댓글(채널에도 전송)" if notification_type == 'thread_broadcast' else "스레드 댓글"
+                self.log(f"[슬랙 알림] {mode_label} 모드: '{thread_keyword}' 검색 중...")
+
             send_schedule_notification(
                 webhook_url='',  # 더 이상 사용 안 함 (호환성용)
                 schedule_name=schedule_name,
@@ -1453,7 +1469,7 @@ Branch: {branch}
                 notification_type=notification_type,
                 bot_token=bot_token,
                 channel_id=channel_id,
-                thread_keyword=thread_keyword if notification_type == 'thread' else None,
+                thread_keyword=thread_keyword if notification_type in ('thread', 'thread_broadcast') else None,
                 first_message=first_message if first_message else None
             )
             
@@ -1733,6 +1749,9 @@ Branch: {branch}
     
     def show_feedback_dialog(self):
         """버그 및 피드백 다이얼로그 표시"""
+        if FeedbackDialog is None:
+            QMessageBox.warning(self, "알림", "피드백 기능을 사용할 수 없습니다.")
+            return
         # 앱 버전 전달
         app_version = self.read_version()
         dialog = FeedbackDialog(self, app_version)
@@ -1763,20 +1782,19 @@ Branch: {branch}
         return False
     
     def check_chromedriver_on_startup(self):
-        """앱 시작 시 ChromeDriver 존재 여부 확인 및 자동 설치"""
+        """앱 시작 시 ChromeDriver 버전 호환성 확인 및 자동 업데이트"""
         try:
-            self.log("=== ChromeDriver 확인 중 ===")
-            
-            # ChromeDriver 경로 확인 시도
-            try:
-                chromedriver_path = AWSManager.get_chromedriver_path()
-                self.log(f"✅ ChromeDriver 발견: {chromedriver_path}")
-                return
-            except FileNotFoundError as e:
-                # ChromeDriver가 없음
-                self.log("⚠️ ChromeDriver가 설치되어 있지 않습니다.")
-                self.log(str(e))
-                
+            self.log("=== ChromeDriver 버전 호환성 확인 중 ===")
+
+            # 1. Chrome 버전과 ChromeDriver 호환성 확인
+            is_compatible, chrome_version, driver_version, chromedriver_path = AWSManager.is_chromedriver_compatible()
+
+            if chromedriver_path is None and driver_version is None:
+                # ChromeDriver가 설치되어 있지 않음
+                self.log("[경고] ChromeDriver가 설치되어 있지 않습니다.")
+                if chrome_version:
+                    self.log(f"  시스템 Chrome 버전: {chrome_version}")
+
                 # 사용자에게 자동 설치 여부 확인
                 reply = QMessageBox.question(
                     self,
@@ -1784,22 +1802,61 @@ Branch: {branch}
                     "ChromeDriver가 설치되어 있지 않습니다.\n\n"
                     "서버 업로드/패치 기능을 사용하려면 ChromeDriver가 필요합니다.\n"
                     "지금 자동으로 설치하시겠습니까?\n\n"
-                    "• chromedriver_autoinstaller 사용\n"
-                    "• 시스템 Chrome 버전과 호환되는 버전 자동 선택\n"
-                    "• 소요 시간: 약 30초~1분",
+                    f"- 시스템 Chrome 버전: {chrome_version or '확인 불가'}\n"
+                    "- 호환되는 ChromeDriver 자동 다운로드\n"
+                    "- 소요 시간: 약 30초~1분",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.Yes
                 )
-                
+
                 if reply == QMessageBox.No:
                     self.log("ChromeDriver 설치를 건너뛰었습니다.")
                     self.log("나중에 Settings 메뉴에서 설치할 수 있습니다.")
                     return
-                
+
                 # 자동 설치 시작
                 self.log("=== ChromeDriver 자동 설치 시작 ===")
                 self.install_chromedriver_on_startup()
-                
+                return
+
+            if is_compatible:
+                # 호환됨
+                self.log(f"[성공] ChromeDriver 버전 호환됨")
+                self.log(f"  Chrome: {chrome_version}")
+                self.log(f"  ChromeDriver: {driver_version}")
+                return
+
+            # 버전 불일치 - 자동 업데이트 필요
+            chrome_major = chrome_version.split('.')[0] if chrome_version else '?'
+            driver_major = driver_version.split('.')[0] if driver_version else '?'
+
+            self.log(f"[경고] ChromeDriver 버전 불일치!")
+            self.log(f"  Chrome: {chrome_version} (메이저: {chrome_major})")
+            self.log(f"  ChromeDriver: {driver_version} (메이저: {driver_major})")
+
+            # 사용자에게 자동 업데이트 여부 확인
+            reply = QMessageBox.question(
+                self,
+                "ChromeDriver 업데이트 필요",
+                f"ChromeDriver 버전이 Chrome과 호환되지 않습니다.\n\n"
+                f"Chrome 버전: {chrome_version} (메이저: {chrome_major})\n"
+                f"ChromeDriver 버전: {driver_version} (메이저: {driver_major})\n\n"
+                "ChromeDriver를 자동으로 업데이트하시겠습니까?\n\n"
+                "- 구버전 자동 삭제\n"
+                "- Chrome과 호환되는 최신 버전 설치",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+
+            if reply == QMessageBox.No:
+                self.log("ChromeDriver 업데이트를 건너뛰었습니다.")
+                self.log("[주의] 버전 불일치로 인해 서버 업로드/패치가 실패할 수 있습니다.")
+                return
+
+            # 자동 업데이트 시작
+            self.log("=== ChromeDriver 자동 업데이트 시작 ===")
+            self.install_chromedriver_on_startup()
+
         except Exception as e:
             self.log(f"ChromeDriver 확인 중 오류: {e}")
     

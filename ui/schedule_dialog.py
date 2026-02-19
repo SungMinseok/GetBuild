@@ -1,7 +1,8 @@
 """스케줄 생성/편집 다이얼로그"""
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-                             QPushButton, QComboBox, QTimeEdit, QCheckBox, QGroupBox, 
-                             QRadioButton, QButtonGroup, QMessageBox, QFormLayout, QFileDialog)
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+                             QPushButton, QComboBox, QTimeEdit, QCheckBox, QGroupBox,
+                             QRadioButton, QButtonGroup, QMessageBox, QFormLayout, QFileDialog,
+                             QSpinBox)
 from PyQt5.QtCore import QTime, Qt
 from typing import Dict, Any, Optional, List
 import json
@@ -267,10 +268,19 @@ class ScheduleDialog(QDialog):
         self.branch_edit = QLineEdit()
         self.branch_edit.setPlaceholderText("game, game_dev, etc.")
         layout.addRow("Branch:", self.branch_edit)
-        
+
+        # 패치 대기시간 (분) - 서버업로드및패치 옵션 전용
+        self.patch_delay_spinbox = QSpinBox()
+        self.patch_delay_spinbox.setRange(0, 120)
+        self.patch_delay_spinbox.setValue(30)
+        self.patch_delay_spinbox.setSuffix(" 분")
+        self.patch_delay_spinbox.setToolTip("서버업로드및패치 시 업로드 완료 후 패치까지 대기 시간")
+        self.patch_delay_spinbox.setEnabled(False)  # 기본 비활성화
+        layout.addRow("패치 대기시간:", self.patch_delay_spinbox)
+
         group.setLayout(layout)
         return group
-    
+
     def create_slack_settings_group(self) -> QGroupBox:
         """슬랙 알림 설정 그룹"""
         group = QGroupBox("슬랙 알림 (선택사항)")
@@ -296,7 +306,12 @@ class ScheduleDialog(QDialog):
         self.notification_thread_radio.setEnabled(False)
         self.notification_type_group.addButton(self.notification_thread_radio, 1)
         notification_type_layout.addWidget(self.notification_thread_radio)
-        
+
+        self.notification_thread_broadcast_radio = QRadioButton("스레드 댓글(채널에도 전송)")
+        self.notification_thread_broadcast_radio.setEnabled(False)
+        self.notification_type_group.addButton(self.notification_thread_broadcast_radio, 2)
+        notification_type_layout.addWidget(self.notification_thread_broadcast_radio)
+
         notification_type_layout.addStretch()
         layout.addRow("알림 타입:", notification_type_layout)
         
@@ -529,6 +544,7 @@ class ScheduleDialog(QDialog):
         """슬랙 알림 활성화 토글"""
         self.notification_standalone_radio.setEnabled(checked)
         self.notification_thread_radio.setEnabled(checked)
+        self.notification_thread_broadcast_radio.setEnabled(checked)
         
         # 알림 타입에 따라 필드 활성화
         if checked:
@@ -544,9 +560,9 @@ class ScheduleDialog(QDialog):
             self.first_message_edit.setEnabled(False)
     
     def on_notification_type_changed(self):
-        """알림 타입 변경 (단독/스레드)"""
+        """알림 타입 변경 (단독/스레드/스레드+채널)"""
         is_standalone = self.notification_standalone_radio.isChecked()
-        
+
         if is_standalone:
             # 단독 알림: Webhook URL 대신 Bot Token과 채널 ID 사용
             self.webhook_combo.setEnabled(False)
@@ -644,77 +660,88 @@ class ScheduleDialog(QDialog):
                 'dest_path': True,
                 'buildname': True,
                 'awsurl': False,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             },
             '전체복사': {
                 'src_path': True,
                 'dest_path': True,
                 'buildname': True,
                 'awsurl': False,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             },
             '서버복사': {
                 'src_path': True,
                 'dest_path': True,
                 'buildname': True,
                 'awsurl': False,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             },
             '서버업로드': {
                 'src_path': True,
                 'dest_path': False,
                 'buildname': True,
                 'awsurl': False,
-                'branch': True
+                'branch': True,
+                'patch_delay': False
             },
             '서버업로드및패치': {
                 'src_path': True,
                 'dest_path': False,
                 'buildname': True,
                 'awsurl': True,
-                'branch': True
+                'branch': True,
+                'patch_delay': True
             },
             '서버패치': {
                 'src_path': True,
                 'dest_path': False,
                 'buildname': True,
                 'awsurl': True,
-                'branch': True
+                'branch': True,
+                'patch_delay': False
             },
             '서버삭제': {
                 'src_path': False,
                 'dest_path': False,
                 'buildname': False,
                 'awsurl': True,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             },
             '빌드굽기': {
                 'src_path': False,
                 'dest_path': False,
                 'buildname': False,
                 'awsurl': False,
-                'branch': True
+                'branch': True,
+                'patch_delay': False
             },
             '테스트(로그)': {
                 'src_path': False,
                 'dest_path': False,
                 'buildname': False,
                 'awsurl': False,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             },
             'Chrome프로세스정리': {
                 'src_path': False,
                 'dest_path': False,
                 'buildname': False,
                 'awsurl': False,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             },
             'TEST': {
                 'src_path': False,
                 'dest_path': False,
                 'buildname': False,
                 'awsurl': False,
-                'branch': False
+                'branch': False,
+                'patch_delay': False
             }
         }
         
@@ -732,6 +759,7 @@ class ScheduleDialog(QDialog):
         self.dest_path_edit.setEnabled(requirements.get('dest_path', True))
         self.awsurl_edit.setEnabled(requirements.get('awsurl', True))
         self.branch_edit.setEnabled(requirements.get('branch', True))
+        self.patch_delay_spinbox.setEnabled(requirements.get('patch_delay', False))
         
         # buildname 관련 필드들
         buildname_required = requirements.get('buildname', True)
@@ -869,7 +897,8 @@ class ScheduleDialog(QDialog):
         # AWS 설정
         self.awsurl_edit.setText(self.schedule.get('awsurl', ''))
         self.branch_edit.setText(self.schedule.get('branch', ''))
-        
+        self.patch_delay_spinbox.setValue(self.schedule.get('patch_delay', 30))
+
         # 슬랙 알림 설정
         slack_webhook = self.schedule.get('slack_webhook', '')
         slack_enabled = self.schedule.get('slack_enabled', False)
@@ -885,6 +914,8 @@ class ScheduleDialog(QDialog):
         # 알림 타입 설정
         if notification_type == 'thread':
             self.notification_thread_radio.setChecked(True)
+        elif notification_type == 'thread_broadcast':
+            self.notification_thread_broadcast_radio.setChecked(True)
         else:
             self.notification_standalone_radio.setChecked(True)
         
@@ -972,7 +1003,12 @@ class ScheduleDialog(QDialog):
         
         # 슬랙 알림 설정 (비활성화 상태여도 값이 있으면 저장)
         slack_enabled = self.slack_enabled_checkbox.isChecked()
-        notification_type = 'thread' if self.notification_thread_radio.isChecked() else 'standalone'
+        if self.notification_thread_radio.isChecked():
+            notification_type = 'thread'
+        elif self.notification_thread_broadcast_radio.isChecked():
+            notification_type = 'thread_broadcast'
+        else:
+            notification_type = 'standalone'
         
         # Bot Token 정보 가져오기 (이름과 코드)
         bot_token_name = self.bot_token_combo.currentText() if self.bot_token_combo.currentIndex() > 0 else ''
@@ -1011,6 +1047,7 @@ class ScheduleDialog(QDialog):
             'buildname': self.buildname_combo.currentText(),
             'awsurl': self.awsurl_edit.text().strip(),
             'branch': self.branch_edit.text().strip(),
+            'patch_delay': self.patch_delay_spinbox.value(),
             'repeat_type': repeat_type,
             'repeat_days': repeat_days,
             'enabled': self.enabled_checkbox.isChecked(),

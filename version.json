@@ -1,8 +1,26 @@
 {
-  "version": "3.0.2",
-  "build_date": "2025-12-31",
+  "version": "3.0.4",
+  "build_date": "2026-02-13",
   "update_url": "https://api.github.com/repos/SungMinseok/GetBuild/releases/latest",
   "changelog": [
+    {
+      "version": "3.0.4",
+      "date": "2026-02-13",
+      "changes": [
+        "코드 정리 - 불필요한 파일 대량 삭제 및 스크립트 경로 정리",
+        "ChromeDriver 자동 관리 (버전 감지, 호환성 확인, 자동 업데이트)",
+        "서버업로드및패치 - 패치 대기시간 설정 기능 추가",
+        "슬랙 알림 - 스레드 댓글(채널에도 전송) 모드 추가",
+        "결과 파일 result/ 폴더 저장, run.bat 가상환경 자동 감지"
+      ]
+    },
+    {
+      "version": "3.0.3",
+      "date": "2026-01-16",
+      "changes": [
+        "클라복사 등 옵션 시, 로컬 경로에 최대 폴더 개수 제한 설정 가능(용량 이슈 방지)\n서버패치 시, Update with sync 버튼 클릭 추가"
+      ]
+    },
     {
       "version": "3.0.2",
       "date": "2025-12-31",
