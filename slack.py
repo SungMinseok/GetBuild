@@ -10,11 +10,15 @@
 """
 import os
 import json
+import unicodedata
 import requests
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+
+# chat.postMessage 필수 text — 채널에 보이지 않게 하고 attachment(세로 막대 블록)만 표시
+_SLACK_TEXT_ATTACHMENT_ONLY = "\u200b"
 
 
 # Slack OAuth 토큰 설정 (환경 변수에서 가져오기)
@@ -406,7 +410,9 @@ def find_thread_by_keyword(bot_token: str, channel_id: str, keyword: str,
 
 
 def send_message_with_bot_token(bot_token: str, channel_id: str, 
-                                message: str, title: Optional[str] = None) -> bool:
+                                message: str, title: Optional[str] = None,
+                                blocks: Optional[List[dict]] = None,
+                                attachments: Optional[List[dict]] = None) -> bool:
     """
     Bot Token과 채널 ID를 사용하여 메시지 전송 (단독 알림용)
     
@@ -415,6 +421,8 @@ def send_message_with_bot_token(bot_token: str, channel_id: str,
         channel_id: 채널 ID
         message: 전송할 메시지
         title: 메시지 제목 (선택사항)
+        blocks: 최상위 Block Kit (attachments 미사용 시)
+        attachments: attachment(color=왼쪽 세로 막대 색) + blocks 등
     
     Returns:
         전송 성공 여부
@@ -427,10 +435,18 @@ def send_message_with_bot_token(bot_token: str, channel_id: str,
         if title:
             full_message = f"*{title}*\n{message}"
         
-        response = client.chat_postMessage(
-            channel=channel_id,
-            text=full_message
-        )
+        post_kwargs: dict = {'channel': channel_id}
+        if attachments:
+            post_kwargs['attachments'] = attachments
+            # 본문은 attachment(blocks)만 표시 — 최상위 text 는 비가시 문자로 중복 방지
+            post_kwargs['text'] = _SLACK_TEXT_ATTACHMENT_ONLY
+        elif blocks:
+            post_kwargs['blocks'] = blocks
+            post_kwargs['text'] = full_message[:4000]
+        else:
+            post_kwargs['text'] = full_message
+        
+        response = client.chat_postMessage(**post_kwargs)
         
         if response['ok']:
             print(f"[Slack] ✅ 메시지 전송 성공: {response['ts']}")
@@ -475,7 +491,9 @@ def send_message_with_bot_token(bot_token: str, channel_id: str,
 
 def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str,
                      message: str, title: Optional[str] = None,
-                     reply_broadcast: bool = False) -> bool:
+                     reply_broadcast: bool = False,
+                     blocks: Optional[List[dict]] = None,
+                     attachments: Optional[List[dict]] = None) -> bool:
     """
     특정 스레드에 댓글로 메시지 전송
     
@@ -485,6 +503,8 @@ def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str,
         thread_ts: 스레드 timestamp
         message: 전송할 메시지
         title: 메시지 제목 (선택사항)
+        blocks: 최상위 Block Kit
+        attachments: attachment(color) + blocks
     
     Returns:
         전송 성공 여부
@@ -500,8 +520,15 @@ def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str,
         post_kwargs = {
             'channel': channel_id,
             'thread_ts': thread_ts,
-            'text': full_message,
         }
+        if attachments:
+            post_kwargs['attachments'] = attachments
+            post_kwargs['text'] = _SLACK_TEXT_ATTACHMENT_ONLY
+        elif blocks:
+            post_kwargs['blocks'] = blocks
+            post_kwargs['text'] = full_message[:4000]
+        else:
+            post_kwargs['text'] = full_message
         if reply_broadcast:
             post_kwargs['reply_broadcast'] = True
         response = client.chat_postMessage(**post_kwargs)
@@ -549,42 +576,81 @@ def send_thread_reply(bot_token: str, channel_id: str, thread_ts: str,
         return False
 
 
+def _schedule_status_color(status: str) -> str:
+    """
+    Slack attachment color — 메시지 왼쪽 세로 막대.
+    완료 계열: 녹색(hex), 그 외: 빨강(danger).
+    """
+    s = unicodedata.normalize('NFC', (status or '').strip())
+    if s in ('완료', '성공', '업로드완료'):
+        return '#2EB886'
+    return 'danger'
+
+
+def _build_schedule_notification_blocks(
+    schedule_name: str,
+    status: str,
+    details: Optional[str],
+    first_message: Optional[str],
+    schedule_option: Optional[str],
+) -> Tuple[List[dict], str]:
+    """
+    스케줄 알림용 Block Kit + attachment 색상.
+    상태 문구는 본문에 넣지 않고 왼쪽 세로 막대 색으로만 구분한다.
+    """
+    name_line = f"*{schedule_name}*" if schedule_name else "*스케줄*"
+    mrkdwn_lines = [name_line]
+    if schedule_option:
+        mrkdwn_lines.append(f"옵션 `{schedule_option}`")
+
+    body_parts = []
+    if first_message:
+        body_parts.append(first_message.strip())
+    if details:
+        body_parts.append(details.strip())
+    body = "\n\n".join(p for p in body_parts if p)
+
+    if body:
+        mrkdwn_lines.extend(["",  "", body])
+    mrkdwn_text = "\n".join(mrkdwn_lines)
+    if len(mrkdwn_text) > 3000:
+        mrkdwn_text = mrkdwn_text[:2997] + "..."
+
+    blocks: List[dict] = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": mrkdwn_text}}
+    ]
+    color = _schedule_status_color(status)
+    return blocks, color
+
+
 def send_schedule_notification(webhook_url: str, schedule_name: str, 
                                status: str, details: Optional[str] = None,
                                notification_type: str = 'standalone',
                                bot_token: Optional[str] = None,
                                channel_id: Optional[str] = None,
                                thread_keyword: Optional[str] = None,
-                               first_message: Optional[str] = None) -> bool:
+                               first_message: Optional[str] = None,
+                               schedule_option: Optional[str] = None,
+                               plain_message_only: bool = False) -> bool:
     """
     스케줄 실행 알림 전송 (단독 알림 또는 스레드 댓글)
     
     Args:
         webhook_url: Slack Webhook URL (더 이상 사용 안 함, 호환성용)
         schedule_name: 스케줄 이름
-        status: 상태 (시작, 완료, 실패)
+        status: 상태 (시작, 완료, 실패, 업로드완료 등)
         details: 추가 상세 정보
         notification_type: 알림 타입 ('standalone' 또는 'thread')
         bot_token: Slack Bot Token (필수)
         channel_id: 채널 ID (필수)
         thread_keyword: 스레드 검색 키워드 (스레드 댓글용)
         first_message: 알림에 포함될 첫 메시지 (날짜 키워드 포함 가능)
+        schedule_option: 스케줄 옵션 (서버패치 등, 가시성·통일용)
+        plain_message_only: True면 세로 막대·헤더 없이 본문 텍스트만 전송 (테스트(로그))
     
     Returns:
         전송 성공 여부
     """
-    # 상태에 따른 색상 설정
-    color_map = {
-        '시작': '#2196F3',  # 파란색
-        '완료': 'good',      # 녹색
-        '성공': 'good',
-        '실패': 'danger',    # 빨간색
-        '오류': 'danger',
-        '경고': 'warning'    # 노란색
-    }
-    
-    color = color_map.get(status, '#808080')  # 기본: 회색
-    
     # 첫 메시지가 있으면 날짜 키워드 변환
     converted_first_message = ""
     if first_message:
@@ -604,24 +670,41 @@ def send_schedule_notification(webhook_url: str, schedule_name: str,
         if 'mmdd' in converted_first_message:
             converted_first_message = converted_first_message.replace('mmdd', now.strftime('%m%d'))
     
-    # 메시지 구성
-    title = ""
-    message = ""
-    
-    # 첫 메시지가 있으면 맨 앞에 추가
-    if converted_first_message:
-        message = converted_first_message
-    
-    if details:
-        if message:
-            message += f"\n{details}"
-        else:
-            message = details
-    
     # Bot Token과 채널 ID가 없으면 실패
     if not bot_token or not channel_id:
         print(f"[Slack] ❌ Bot Token 또는 채널 ID가 없습니다.")
         return False
+
+    if plain_message_only:
+        body_parts = []
+        if converted_first_message:
+            body_parts.append(converted_first_message.strip())
+        if details:
+            body_parts.append(details.strip())
+        plain_body = "\n\n".join(p for p in body_parts if p)
+        if not plain_body:
+            return False
+        plain_body = plain_body[:4000]
+        if notification_type in ('thread', 'thread_broadcast') and thread_keyword:
+            broadcast = (notification_type == 'thread_broadcast')
+            thread_ts = find_thread_by_keyword(bot_token, channel_id, thread_keyword)
+            if thread_ts:
+                return send_thread_reply(
+                    bot_token, channel_id, thread_ts, plain_body, None,
+                    reply_broadcast=broadcast,
+                )
+            print(f"[Slack] 스레드를 찾지 못해 단독 알림으로 전송합니다.")
+            return send_message_with_bot_token(bot_token, channel_id, plain_body, None)
+        return send_message_with_bot_token(bot_token, channel_id, plain_body, None)
+
+    blocks, bar_color = _build_schedule_notification_blocks(
+        schedule_name=schedule_name,
+        status=status,
+        details=details,
+        first_message=converted_first_message if converted_first_message else None,
+        schedule_option=(schedule_option or '').strip() or None,
+    )
+    schedule_attachments = [{"color": bar_color, "blocks": blocks}]
     
     # 알림 타입에 따라 전송 방식 선택
     if notification_type in ('thread', 'thread_broadcast') and thread_keyword:
@@ -634,15 +717,24 @@ def send_schedule_notification(webhook_url: str, schedule_name: str,
         thread_ts = find_thread_by_keyword(bot_token, channel_id, thread_keyword)
 
         if thread_ts:
-            # 2. 스레드에 댓글 달기
-            return send_thread_reply(bot_token, channel_id, thread_ts, message, title, reply_broadcast=broadcast)
+            # 2. 스레드에 댓글 달기 (text 는 비가시; attachment 만 표시)
+            return send_thread_reply(
+                bot_token, channel_id, thread_ts, '', None,
+                reply_broadcast=broadcast, attachments=schedule_attachments,
+            )
         else:
             # 스레드를 찾지 못한 경우 단독 알림으로 폴백
             print(f"[Slack] 스레드를 찾지 못해 단독 알림으로 전송합니다.")
-            return send_message_with_bot_token(bot_token, channel_id, message, title)
+            return send_message_with_bot_token(
+                bot_token, channel_id, '', None,
+                attachments=schedule_attachments,
+            )
     else:
         # 단독 알림 (Bot Token과 채널 ID 사용)
-        return send_message_with_bot_token(bot_token, channel_id, message, title)
+        return send_message_with_bot_token(
+            bot_token, channel_id, '', None,
+            attachments=schedule_attachments,
+        )
 
 
 if __name__ == "__main__":

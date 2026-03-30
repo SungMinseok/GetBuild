@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(done)",
+      "Bash(ls:*)",
+      "Bash(dir \"C:\\\\Users\\\\mssung\\\\OneDrive - KRAFTON\\\\PyProject\\\\GetBuild_clean\\\\driver\\\\144\")",
+      "Bash(dir:*)",
+      "Bash(cd:*)",
+      "Bash(git add:*)",
+      "Bash(git reset HEAD .claude/ _ul)",
+      "Bash(git push:*)"
+    ]
+  }
+}

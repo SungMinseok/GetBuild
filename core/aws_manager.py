@@ -433,18 +433,19 @@ class AWSManager:
         killed_count = 0
         try:
             for proc in psutil.process_iter(['pid', 'name']):
-                if proc.info['name'] and 'chromedriver' in proc.info['name'].lower():
-                    try:
+                try:
+                    proc_name = (proc.info.get('name') or proc.name() or '')
+                    if not proc_name:
+                        continue
+                    if 'chromedriver' in proc_name.lower():
                         proc.kill()
                         killed_count += 1
                         print(f"[kill_chromedrivers] 종료: PID {proc.info['pid']}")
-                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                        print(f"[kill_chromedrivers] 종료 실패: {e}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied, KeyError, TypeError):
+                    pass
             
             if killed_count > 0:
                 print(f"[kill_chromedrivers] 총 {killed_count}개의 ChromeDriver 프로세스 종료")
-            else:
-                print("[kill_chromedrivers] 실행 중인 ChromeDriver 없음")
                 
         except Exception as e:
             print(f"[kill_chromedrivers] 오류: {e}")
@@ -563,42 +564,231 @@ class AWSManager:
         return None
     
     @staticmethod
+    def kill_chrome_on_debug_port(port=9222):
+        """포트를 사용하는 Chrome 프로세스만 종료 (앱 전용 C:\\ChromeTEMP 인스턴스)
+        
+        사용자 Chrome은 건드리지 않고, 앱 전용 디버깅 포트의 Chrome만 종료
+        """
+        killed_count = 0
+        try:
+            result = subprocess.run(
+                f'netstat -ano | findstr :{port}',
+                shell=True, capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0 or not result.stdout:
+                return killed_count
+            
+            pids_to_kill = set()
+            for line in result.stdout.strip().splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[-1].isdigit():
+                    pids_to_kill.add(int(parts[-1]))
+            
+            for pid in pids_to_kill:
+                try:
+                    proc = psutil.Process(pid)
+                    if proc.name() and 'chrome' in proc.name().lower():
+                        proc.kill()
+                        killed_count += 1
+                        print(f"[kill_chrome_on_debug_port] 포트 {port} Chrome 종료: PID {pid}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            
+            if killed_count > 0:
+                print(f"[kill_chrome_on_debug_port] 총 {killed_count}개 프로세스 종료")
+        except Exception as e:
+            print(f"[kill_chrome_on_debug_port] 오류 (무시): {e}")
+        
+        return killed_count
+    
+    @staticmethod
     def cleanup_chrome_processes():
-        """Chrome 및 ChromeDriver 프로세스 모두 종료"""
-        print("[cleanup_chrome_processes] 모든 Chrome 및 ChromeDriver 프로세스 종료 중...")
+        """ChromeDriver 프로세스만 종료 (사용자 Chrome은 유지하여 작업 손실 방지)"""
+        print("[cleanup_chrome_processes] ChromeDriver 프로세스 정리 중...")
         
-        # Chrome 프로세스 종료
-        try:
-            result = subprocess.run('taskkill /F /IM chrome.exe /T', 
-                                  shell=True, 
-                                  capture_output=True, 
-                                  text=True,
-                                  timeout=5)
-            if result.returncode == 0:
-                print("[cleanup_chrome_processes] ✅ Chrome 프로세스 종료 완료")
-            else:
-                print("[cleanup_chrome_processes] Chrome 프로세스가 실행 중이지 않음")
-        except Exception as e:
-            print(f"[cleanup_chrome_processes] Chrome 종료 중 오류 (무시): {e}")
+        killed = AWSManager.kill_all_chromedrivers()
+        if killed > 0:
+            print("[cleanup_chrome_processes] 프로세스 종료 대기 중 (3초)...")
+            time.sleep(3)
         
-        # ChromeDriver 프로세스 종료
-        try:
-            result = subprocess.run('taskkill /F /IM chromedriver.exe /T', 
-                                  shell=True, 
-                                  capture_output=True, 
-                                  text=True,
-                                  timeout=5)
-            if result.returncode == 0:
-                print("[cleanup_chrome_processes] ✅ ChromeDriver 프로세스 종료 완료")
-            else:
-                print("[cleanup_chrome_processes] ChromeDriver 프로세스가 실행 중이지 않음")
-        except Exception as e:
-            print(f"[cleanup_chrome_processes] ChromeDriver 종료 중 오류 (무시): {e}")
-        
-        # 프로세스 완전 종료 대기
-        print("[cleanup_chrome_processes] 프로세스 종료 대기 중 (3초)...")
-        time.sleep(3)
         print("[cleanup_chrome_processes] ✅ 정리 완료")
+    
+    @staticmethod
+    def _scroll_into_view(driver, element):
+        """요소를 뷰포트 내로 스크롤 (화면 쏠림 시 요소 미노출 방지)"""
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            time.sleep(0.2)
+        except Exception:
+            pass
+    
+    _AWS_DEPLOY_SOCIAL_OIDC_XPATH = '//*[@id="social-oidc"]'
+    
+    @staticmethod
+    def _ensure_aws_deploy_social_oidc_clicked(driver, log_prefix: str, wait_sec: int = 15):
+        """AWS 배포 페이지에서 OIDC 로그인 버튼이 보이면 클릭해야만 진행한다.
+        클릭 실패를 bare except로 '이미 로그인' 처리하지 않는다."""
+        xpath = AWSManager._AWS_DEPLOY_SOCIAL_OIDC_XPATH
+        wait = WebDriverWait(driver, wait_sec)
+        try:
+            wait.until(EC.visibility_of_element_located((By.XPATH, xpath)))
+        except TimeoutException:
+            print(f"{log_prefix} OIDC 로그인 버튼 없음 (이미 로그인된 상태로 간주)")
+            return
+        
+        print(f"{log_prefix} 로그인 확인 중... (OIDC 버튼 클릭)")
+        time.sleep(0.5)
+        last_error = None
+        for attempt in range(10):
+            try:
+                buttons = driver.find_elements(By.XPATH, xpath)
+                if not buttons:
+                    print(f"{log_prefix} OIDC 버튼 제거됨 → 로그인 플로우 진행")
+                    return
+                btn = buttons[0]
+                if not btn.is_displayed():
+                    print(f"{log_prefix} OIDC 버튼 비표시 → 로그인 플로우 진행")
+                    return
+                AWSManager._scroll_into_view(driver, btn)
+                WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+                btn = driver.find_element(By.XPATH, xpath)
+                btn.click()
+                print(f"{log_prefix} 로그인 버튼 클릭 완료")
+                time.sleep(2)
+                return
+            except StaleElementReferenceException:
+                last_error = None
+                time.sleep(0.35)
+                continue
+            except TimeoutException as e:
+                last_error = e
+                try:
+                    buttons = driver.find_elements(By.XPATH, xpath)
+                    if not buttons:
+                        print(f"{log_prefix} OIDC 버튼 대기 중 사라짐 → 로그인 플로우 진행")
+                        return
+                    if not buttons[0].is_displayed():
+                        print(f"{log_prefix} OIDC 버튼 비표시 → 로그인 플로우 진행")
+                        return
+                except StaleElementReferenceException:
+                    pass
+                time.sleep(0.5)
+                continue
+            except Exception as e:
+                last_error = e
+                if attempt >= 6:
+                    try:
+                        btn = driver.find_element(By.XPATH, xpath)
+                        if btn.is_displayed():
+                            driver.execute_script("arguments[0].click();", btn)
+                            print(f"{log_prefix} 로그인 버튼 JS 클릭 완료")
+                            time.sleep(2)
+                            return
+                    except Exception as js_e:
+                        last_error = js_e
+                time.sleep(0.5)
+        
+        raise Exception(
+            f"{log_prefix} OIDC 로그인 버튼(#social-oidc) 클릭 실패. "
+            f"페이지 로드·팝업 차단·수동 로그인 여부를 확인하세요. 마지막 오류: {last_error}"
+        )
+    
+    _KEYCLOAK_HOST = "keycloak.pbb-qa.pubg.io"
+    _KEYCLOAK_KRAFTON_XPATH = "/html/body/div/div/main/div[2]/div[2]/div[2]/ul/li/a"
+
+    @staticmethod
+    def _ensure_keycloak_login(driver, log_prefix: str, wait_sec: int = 10):
+        """Keycloak 로그인 페이지가 감지되면 'Sign in through KRAFTON' 버튼을 클릭한다."""
+        try:
+            current_url = driver.current_url
+        except Exception:
+            return
+
+        if AWSManager._KEYCLOAK_HOST not in current_url:
+            print(f"{log_prefix} Keycloak 로그인 페이지 아님 (이미 로그인된 상태)")
+            return
+
+        print(f"{log_prefix} Keycloak 로그인 페이지 감지됨. 'Sign in through KRAFTON' 클릭 시도...")
+        xpath = AWSManager._KEYCLOAK_KRAFTON_XPATH
+        wait = WebDriverWait(driver, wait_sec)
+        try:
+            btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            AWSManager._scroll_into_view(driver, btn)
+            btn.click()
+            print(f"{log_prefix} 'Sign in through KRAFTON' 클릭 완료")
+            # 로그인 후 리다이렉트 대기
+            time.sleep(3)
+            # keycloak 호스트에서 벗어날 때까지 대기 (최대 30초)
+            for _ in range(30):
+                try:
+                    if AWSManager._KEYCLOAK_HOST not in driver.current_url:
+                        print(f"{log_prefix} Keycloak 로그인 완료, 원래 페이지로 리다이렉트됨")
+                        time.sleep(2)
+                        return
+                except Exception:
+                    pass
+                time.sleep(1)
+            print(f"{log_prefix} ⚠️ Keycloak 리다이렉트 대기 타임아웃 (30초). 계속 진행합니다.")
+        except TimeoutException:
+            raise Exception(
+                f"{log_prefix} Keycloak 'Sign in through KRAFTON' 버튼을 찾을 수 없습니다. "
+                f"페이지 구조가 변경되었을 수 있습니다. XPath: {xpath}"
+            )
+        except Exception as e:
+            raise Exception(
+                f"{log_prefix} Keycloak 로그인 처리 중 오류: {e}"
+            )
+
+    @staticmethod
+    def _ensure_work_tab(driver):
+        """새 탭을 열고 포커스를 그 탭으로 고정 (이후 driver.get 등은 항상 새 탭에서 수행)"""
+        handles_before = set(driver.window_handles)
+        tab_ok = False
+        try:
+            from selenium.webdriver.common.window import WindowTypes
+            driver.switch_to.new_window(WindowTypes.TAB)
+            tab_ok = True
+        except Exception:
+            try:
+                if hasattr(driver.switch_to, 'new_window'):
+                    driver.switch_to.new_window('tab')
+                    tab_ok = True
+            except Exception:
+                tab_ok = False
+        if not tab_ok:
+            driver.execute_script("window.open('about:blank','_blank');")
+            new_handle = None
+            for _ in range(40):
+                time.sleep(0.1)
+                now = driver.window_handles
+                extra = [h for h in now if h not in handles_before]
+                if extra:
+                    new_handle = extra[-1]
+                    break
+            if not new_handle:
+                raise RuntimeError(
+                    "[start_driver] 새 탭을 열 수 없습니다. 팝업 차단 여부와 Chrome 버전을 확인하세요."
+                )
+            driver.switch_to.window(new_handle)
+        else:
+            cur = driver.current_window_handle
+            if cur in handles_before:
+                extra = [h for h in driver.window_handles if h not in handles_before]
+                if extra:
+                    driver.switch_to.window(extra[-1])
+        try:
+            driver.maximize_window()
+            time.sleep(0.5)
+        except Exception:
+            try:
+                driver.set_window_size(1920, 1080)
+            except Exception:
+                pass
+        try:
+            driver.execute_script("document.body.style.zoom='100%'")
+        except Exception:
+            pass
+        print("[start_driver] 작업용 새 탭 열기·전환 완료 (current handle 보장)")
     
     @staticmethod
     def start_driver():
@@ -681,17 +871,20 @@ ChromeDriver 버전: {chromedriver_version}
                     service = Service(executable_path=chromedriver_path)
                     driver = webdriver.Chrome(service=service, options=chrome_options)
                     
-                    # 새 탭 열기
-                    driver.execute_script("window.open('');")
-                    new_tab = driver.window_handles[-1]
-                    driver.switch_to.window(new_tab)
+                    # 창 최대화 (화면 쏠림/입력 안됨 방지)
+                    try:
+                        driver.maximize_window()
+                    except Exception:
+                        pass
+                    
+                    AWSManager._ensure_work_tab(driver)
                     print("[start_driver] 기존 Chrome 세션 연결 완료 (로그인 상태 유지됨)")
                     return driver
                 except Exception as e:
-                    # 기존 세션 연결 실패 시 Chrome 종료 후 재시작
+                    # 기존 세션 연결 실패 시 포트 9222 Chrome만 종료 후 재시작 (사용자 Chrome 유지)
                     print(f"[start_driver] [경고] 기존 Chrome 세션 연결 실패: {e}")
-                    print("[start_driver] Chrome 프로세스 종료 후 새로 시작합니다...")
-                    os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                    print("[start_driver] 포트 9222 Chrome 프로세스만 종료 후 새로 시작합니다...")
+                    AWSManager.kill_chrome_on_debug_port(port=AWSManager.CHROME_DEBUGGING_PORT)
                     time.sleep(3)
         except requests.ConnectionError:
             print("[start_driver] 기존 Chrome 세션 없음, 새로 시작...")
@@ -705,13 +898,17 @@ ChromeDriver 버전: {chromedriver_version}
         print(f"[start_driver] 사용자 데이터 디렉터리: {chrome_user_data_dir}")
         print(f"[start_driver] [정보] 로그인 정보는 {chrome_user_data_dir}에 저장됩니다.")
         
-        # Chrome 실행 옵션 설정
+        # Chrome 실행 옵션 설정 (--start-maximized: 화면 쏠림/입력 안됨 방지)
         chrome_args = [
             chrome_executable_path,
             '--remote-debugging-port=9222',
             f'--user-data-dir={chrome_user_data_dir}',
             '--no-first-run',  # 첫 실행 팝업 제거
             '--no-default-browser-check',  # 기본 브라우저 확인 제거
+            '--start-maximized',  # 창 최대화 (뷰포트 쏠림 버그 방지)
+            '--window-size=1920,1080',  # 최소 크기 보장 (고해상도/다중 모니터)
+            '--force-device-scale-factor=1',  # DPI 스케일 100% 고정
+            '--disable-gpu',
         ]
         
         try:
@@ -738,6 +935,12 @@ ChromeDriver 버전: {chromedriver_version}
             # Selenium 타임아웃 설정 증가
             driver = webdriver.Chrome(service=service, options=chrome_options)
             print("[start_driver] [성공] WebDriver 연결 성공")
+            
+            # 창 최대화 (화면 쏠림/입력 안됨 방지)
+            try:
+                driver.maximize_window()
+            except Exception:
+                pass
         except Exception as e:
             error_msg = str(e)
             print(f"[start_driver] [실패] WebDriver 연결 실패: {error_msg}")
@@ -752,10 +955,7 @@ ChromeDriver 버전: {chromedriver_version}
             
             raise Exception(f"ChromeDriver 연결 실패 (타임아웃): {error_msg}")
         
-        # 새 탭 열기
-        driver.execute_script("window.open('');")
-        new_tab = driver.window_handles[-1]
-        driver.switch_to.window(new_tab)
+        AWSManager._ensure_work_tab(driver)
         
         print("[start_driver] Chrome 드라이버 시작 완료")
         print("[start_driver] [팁] 이 Chrome 창을 닫지 않고 유지하면 다음 실행 시 로그인 상태가 유지됩니다.")
@@ -765,7 +965,8 @@ ChromeDriver 버전: {chromedriver_version}
     def upload_server_build(driver, revision: int, zip_path: str, aws_link: str, 
                            branch: str = 'game', build_type: str = 'DEV', 
                            full_build_name: str = 'TEST', 
-                           teamcity_id: str = '', teamcity_pw: str = ''):
+                           teamcity_id: str = '', teamcity_pw: str = '',
+                           teamcity_url: str = ''):
         """서버 빌드 업로드 (TeamCity 방식)"""
         try:
             if driver is None:
@@ -789,91 +990,144 @@ ChromeDriver 버전: {chromedriver_version}
                     print("[서버업로드] ChromeDriver 재시작 시도...")
                     driver = AWSManager.start_driver()
             
-            # 1. TeamCity 빌드 배포 페이지 접속
-            teamcity_url = "https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_Deployment_DeployBuild?mode=branches#all-projects"
-            print(f"[서버업로드] TeamCity 페이지 접속: {teamcity_url}")
-            driver.get(teamcity_url)
+            # 1. TeamCity 빌드 배포 페이지 접속 (teamcity_url 미지정 시 기본값 사용)
+            default_teamcity_url = "https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_Deployment_DeployBuild?mode=branches#all-projects"
+            tc_url = teamcity_url or default_teamcity_url
+            print(f"[서버업로드] TeamCity 페이지 접속: {tc_url}")
+            driver.get(tc_url)
             driver.implicitly_wait(10)
             time.sleep(2)
             
-            # 자동 로그인 시도
+            # 자동 로그인 시도 (로그인 페이지 리다이렉트 시 대비)
             AWSManager.teamcity_auto_login(driver, teamcity_id, teamcity_pw)
+            driver.get(tc_url)
+            time.sleep(2)
             
             # 2. Run 버튼 클릭 (클릭 가능할 때까지 대기)
-            run_button_xpath = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button'
+            run_button_xpath0 = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button'
+            run_button_xpath1 = '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[2]/div[1]/div/button'
             wait = WebDriverWait(driver, 60)  # 타임아웃을 60초로 증가
             
             # 페이지 로드 완료 대기
             time.sleep(3)
             
             try:
-                print("[서버업로드] [단계 1/3] Run 버튼 대기 중...")
-                run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath)))
-                print("[서버업로드] [단계 1/3] Run 버튼 클릭")
-                run_button.click()
-                print("[서버업로드] [단계 1/3] ✅ Run 버튼 클릭 완료")
+                print("[서버업로드] [단계 1/6] Run 버튼 대기 중...")
+                run_button_clicked = False
+                
+                # 첫 번째 XPath 시도
+                try:
+                    run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath0)))
+                    print("[서버업로드] [단계 1/6] Run 버튼 클릭 (XPath 0)")
+                    run_button.click()
+                    run_button_clicked = True
+                    print("[서버업로드] [단계 1/6] ✅ Run 버튼 클릭 완료 (XPath 0)")
+                except TimeoutException:
+                    print("[서버업로드] [단계 1/6] ⚠️ XPath 0 실패, XPath 1 시도 중...")
+                    # 두 번째 XPath 시도
+                    try:
+                        run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath1)))
+                        print("[서버업로드] [단계 1/6] Run 버튼 클릭 (XPath 1)")
+                        run_button.click()
+                        run_button_clicked = True
+                        print("[서버업로드] [단계 1/6] ✅ Run 버튼 클릭 완료 (XPath 1)")
+                    except TimeoutException:
+                        pass  # 다음 except 블록에서 처리
+                
+                if not run_button_clicked:
+                    raise TimeoutException("[서버업로드] [단계 1/6] Run 버튼을 찾을 수 없습니다 (XPath 0, 1 모두 실패)")
             except TimeoutException:
-                print("[서버업로드] [단계 1/3] ⚠️ Run 버튼을 찾을 수 없습니다. 대체 XPath 시도...")
+                print("[서버업로드] [단계 1/6] ⚠️ Run 버튼을 찾을 수 없습니다. 대체 XPath 시도...")
                 # 대체 XPath 시도
                 alternative_xpath = "//button[contains(@class, 'btn-run') or contains(text(), 'Run')]"
                 try:
                     run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_xpath)))
                     run_button.click()
-                    print("[서버업로드] [단계 1/3] ✅ 대체 XPath로 Run 버튼 클릭 성공")
+                    print("[서버업로드] [단계 1/6] ✅ 대체 XPath로 Run 버튼 클릭 성공")
                 except Exception as e:
-                    raise Exception(f"[단계 1/3 실패] Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었거나 로그인이 필요합니다. XPath: {run_button_xpath}, 대체: {alternative_xpath}")
+                    raise Exception(f"[서버업로드] [단계 1/6 실패] Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었거나 로그인이 필요합니다. XPath: {run_button_xpath}, 대체: {alternative_xpath}")
             
             time.sleep(2)
             
-            # 3. 빌드 경로 입력 (텍스트 입력 가능할 때까지 대기)
+            # 탭 0 클릭
+            try:
+                print("[서버업로드] [단계 2/6] 탭 0 클릭")
+                tab0 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-0"]/p/a')))
+                tab0.click()
+                time.sleep(0.5)
+                print("[서버업로드] [단계 2/6] ✅ 탭 0 클릭 완료")
+            except TimeoutException:
+                raise Exception(f"[서버업로드] [단계 2/6 실패] 탭 0을 찾을 수 없습니다. XPath: //*[@id=\"tab-0\"]/p/a")
+            
+            # moveToTop 클릭
+            try:
+                print("[서버업로드] [단계 3/6] moveToTop 클릭")
+                
+                driver.find_element(By.XPATH,'//*[@id="moveToTop"]').click()
+                time.sleep(0.5)
+                print("[서버업로드] [단계 3/6] ✅ moveToTop 클릭 완료")
+            except TimeoutException:
+                raise Exception(f"[서버업로드] [단계 3/6 실패] moveToTop 버튼을 찾을 수 없습니다. XPath: //*[@id=\"moveToTop\"]")
+            
+            # 탭 3 클릭
+            try:
+                print("[서버업로드] [단계 4/6] 탭 3 클릭")
+                tab3 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-3"]/p/a')))
+                tab3.click()
+                time.sleep(0.5)
+                print("[서버업로드] [단계 4/6] ✅ 탭 3 클릭 완료")
+            except TimeoutException:
+                raise Exception(f"[서버업로드] [단계 4/6 실패] 탭 3을 찾을 수 없습니다. XPath: //*[@id=\"tab-3\"]/p/a")
+            
+            # 5. 빌드 경로 입력 (텍스트 입력 가능할 때까지 대기)
             path_input_xpath = '//*[@id="parameter_build_to_deploy_nas_path_804258969"]'
             
             try:
-                print(f"[서버업로드] [단계 2/3] 빌드 경로 입력 필드 대기 중... (빌드: {full_build_name})")
+                print(f"[서버업로드] [단계 5/6] 빌드 경로 입력 필드 대기 중... (빌드: {full_build_name})")
                 path_input = wait.until(EC.presence_of_element_located((By.XPATH, path_input_xpath)))
                 # 입력 가능할 때까지 추가 대기
                 wait.until(EC.element_to_be_clickable((By.XPATH, path_input_xpath)))
             except TimeoutException:
-                print("[서버업로드] [단계 2/3] ⚠️ 빌드 경로 입력 필드를 찾을 수 없습니다. 대체 방법 시도...")
+                print("[서버업로드] [단계 5/6] ⚠️ 빌드 경로 입력 필드를 찾을 수 없습니다. 대체 방법 시도...")
                 # name 속성으로 찾기 시도
                 try:
                     path_input = wait.until(EC.presence_of_element_located((By.NAME, "parameter_build_to_deploy_nas_path")))
-                    print("[서버업로드] [단계 2/3] name 속성으로 입력 필드 찾기 성공")
+                    print("[서버업로드] [단계 5/6] name 속성으로 입력 필드 찾기 성공")
                 except:
                     # class나 placeholder로 찾기 시도
                     try:
                         path_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, 'path') or contains(@name, 'nas')]")))
-                        print("[서버업로드] [단계 2/3] placeholder 속성으로 입력 필드 찾기 성공")
+                        print("[서버업로드] [단계 5/6] placeholder 속성으로 입력 필드 찾기 성공")
                     except Exception as e:
-                        raise Exception(f"[단계 2/3 실패] 빌드 경로 입력 필드를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {path_input_xpath}")
+                        raise Exception(f"[서버업로드] [단계 5/6 실패] 빌드 경로 입력 필드를 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {path_input_xpath}")
             
             # 빌드 경로 생성 (예: \\pubg-pds\PBB\Builds\CompileBuild_DEV_game_dev_SEL294706_r357283)
             build_path = f"\\\\pubg-pds\\PBB\\Builds\\{full_build_name}"
-            print(f"[서버업로드] [단계 2/3] 빌드 경로 입력: {build_path}")
+            print(f"[서버업로드] [단계 5/6] 빌드 경로 입력: {build_path}")
             path_input.clear()
             path_input.send_keys(build_path)
             time.sleep(2)
-            print(f"[서버업로드] [단계 2/3] ✅ 빌드 경로 입력 완료")
+            print(f"[서버업로드] [단계 5/6] ✅ 빌드 경로 입력 완료")
             
-            # 4. Run 버튼 클릭 (최종 실행, 클릭 가능할 때까지 대기)
+            # 6. Run 버튼 클릭 (최종 실행, 클릭 가능할 때까지 대기)
             final_run_button_xpath = '//*[@id="runCustomBuildButton"]'
             
             try:
-                print("[서버업로드] [단계 3/3] 최종 Run 버튼 대기 중...")
+                print("[서버업로드] [단계 6/6] 최종 Run 버튼 대기 중...")
                 final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, final_run_button_xpath)))
-                print("[서버업로드] [단계 3/3] 최종 Run 버튼 클릭")
+                print("[서버업로드] [단계 6/6] 최종 Run 버튼 클릭")
                 final_run_button.click()
-                print("[서버업로드] [단계 3/3] ✅ 최종 Run 버튼 클릭 완료")
+                print("[서버업로드] [단계 6/6] ✅ 최종 Run 버튼 클릭 완료")
             except TimeoutException:
-                print("[서버업로드] [단계 3/3] ⚠️ 최종 Run 버튼을 찾을 수 없습니다. 대체 방법 시도...")
+                print("[서버업로드] [단계 6/6] ⚠️ 최종 Run 버튼을 찾을 수 없습니다. 대체 방법 시도...")
                 try:
                     # 대체 XPath 시도
                     alternative_final_xpath = "//button[contains(@id, 'runCustomBuild') or contains(text(), 'Run')]"
                     final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_final_xpath)))
                     final_run_button.click()
-                    print("[서버업로드] [단계 3/3] ✅ 대체 XPath로 최종 Run 버튼 클릭 성공")
+                    print("[서버업로드] [단계 6/6] ✅ 대체 XPath로 최종 Run 버튼 클릭 성공")
                 except Exception as e:
-                    raise Exception(f"[단계 3/3 실패] 최종 Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {final_run_button_xpath}")
+                    raise Exception(f"[서버업로드] [단계 6/6 실패] 최종 Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {final_run_button_xpath}")
             
             time.sleep(3)
             
@@ -942,13 +1196,9 @@ ChromeDriver 버전: {chromedriver_version}
                 driver.get(aws_link)
                 driver.implicitly_wait(10)
                 
-                try:
-                    print("[update_server_container] 로그인 확인 중...")
-                    driver.find_element(By.XPATH, '//*[@id="social-oidc"]').click()
-                    print("[update_server_container] 로그인 버튼 클릭")
-                except:
-                    print('[update_server_container] 로그인 스킵 (이미 로그인됨)')
-            
+                AWSManager._ensure_aws_deploy_social_oidc_clicked(driver, "[update_server_container]")
+                AWSManager._ensure_keycloak_login(driver, "[update_server_container]")
+
             driver.implicitly_wait(10)
             print("[update_server_container] 패치 작업 시작...")
             
@@ -989,7 +1239,7 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 print(f"[update_server_container] [단계 3/11] 브랜치 입력 필드 대기 중... (브랜치: {branch})")
                 branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
-                # 입력 가능할 때까지 추가 대기
+                AWSManager._scroll_into_view(driver, branch_input)
                 wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 branch_input.clear()
                 branch_input.send_keys(branch)
@@ -1007,6 +1257,7 @@ ChromeDriver 버전: {chromedriver_version}
                         element = wait.until(EC.presence_of_element_located((By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')))
                         if element.text == branch:
                             print(f"[update_server_container] [단계 4/11] 브랜치 '{branch}' 발견 (목록 {x}번째), 클릭")
+                            AWSManager._scroll_into_view(driver, element)
                             element.click()
                             branch_found = True
                             break
@@ -1026,6 +1277,8 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 time.sleep(1)
                 print("[update_server_container] [단계 5/11] Next 버튼 클릭 (브랜치)")
+                next_button1 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                AWSManager._scroll_into_view(driver, next_button1)
                 next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
                 next_button1.click()
                 print("[update_server_container] [단계 5/11] ✅ Next 버튼 클릭 완료 (브랜치)")
@@ -1036,7 +1289,7 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 print(f"[update_server_container] [단계 6/11] TAG 입력 필드 대기 중... (TAG: {full_build_name})")
                 tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
-                # 입력 가능할 때까지 추가 대기
+                AWSManager._scroll_into_view(driver, tag_input)
                 wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 tag_input.clear()
                 tag_input.send_keys(full_build_name)
@@ -1048,6 +1301,8 @@ ChromeDriver 버전: {chromedriver_version}
             # TAG 선택
             try:
                 print("[update_server_container] [단계 7/11] TAG 선택")
+                tag_option = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
+                AWSManager._scroll_into_view(driver, tag_option)
                 tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
                 tag_option.click()
                 time.sleep(1)
@@ -1058,6 +1313,8 @@ ChromeDriver 버전: {chromedriver_version}
             # Next 버튼 (TAG)
             try:
                 print("[update_server_container] [단계 8/11] Next 버튼 클릭 (TAG)")
+                next_button2 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                AWSManager._scroll_into_view(driver, next_button2)
                 next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
                 next_button2.click()
                 print("[update_server_container] [단계 8/11] ✅ Next 버튼 클릭 완료 (TAG)")
@@ -1067,6 +1324,8 @@ ChromeDriver 버전: {chromedriver_version}
             # Build config 체크박스
             try:
                 print("[update_server_container] [단계 9/11] Build config 체크박스 클릭")
+                build_config_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
+                AWSManager._scroll_into_view(driver, build_config_checkbox)
                 build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
                 build_config_checkbox.click()
                 time.sleep(1)
@@ -1077,6 +1336,8 @@ ChromeDriver 버전: {chromedriver_version}
             # Next 버튼 (Build config)
             try:
                 print("[update_server_container] [단계 10/11] Next 버튼 클릭 (Build config)")
+                next_button3 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                AWSManager._scroll_into_view(driver, next_button3)
                 next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
                 next_button3.click()
                 print("[update_server_container] [단계 10/11] ✅ Next 버튼 클릭 완료 (Build config)")
@@ -1086,6 +1347,8 @@ ChromeDriver 버전: {chromedriver_version}
             # SELECT 버튼 클릭
             try:
                 print("[update_server_container] [단계 11/11] SELECT 버튼 클릭")
+                select_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
+                AWSManager._scroll_into_view(driver, select_button)
                 select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
                 select_button.click()
                 time.sleep(1)
@@ -1109,7 +1372,8 @@ ChromeDriver 버전: {chromedriver_version}
                     ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
                     ok_button.click()
                     print("[update_server_container] [확인] ✅ 팝업 OK 버튼 클릭 완료")
-                    time.sleep(10)
+                    time.sleep(20)
+                    print("[update_server_container] [확인] 팝업 OK 버튼 클릭 완료 후 20초 대기")
                     
                     # 첫 번째 탭 클릭
                     try:
@@ -1190,6 +1454,338 @@ ChromeDriver 버전: {chromedriver_version}
             raise
     
     @staticmethod
+    def update_latest_server_container(driver, aws_link: str, branch: str = 'game',
+                                        build_prefix: str = '', is_debug: bool = False):
+        """서버최신강제패치 - TAG 목록에서 build_prefix에 맞는 최신 리비전으로 자동 패치
+
+        Args:
+            driver: Selenium WebDriver (None이면 새로 시작)
+            aws_link: AWS 배포 페이지 URL
+            branch: 브랜치명
+            build_prefix: 세미콜론(;)으로 구분된 필터 키워드 (예: "DailyQLOC;game_dev_AMS")
+            is_debug: 디버그 모드 (True면 최종 실행 버튼 클릭 안 함)
+        """
+        selected_tag = 'unknown'
+        try:
+            print(f"[서버최신강제패치] 시작 - branch: {branch}, build_prefix: {build_prefix}")
+            print(f"[서버최신강제패치] AWS URL: {aws_link}")
+
+            if branch == "":
+                branch = 'game'
+                print(f"[서버최신강제패치] branch 기본값 설정: {branch}")
+
+            # build_prefix 파싱
+            prefixes = [p.strip() for p in build_prefix.split(';') if p.strip()]
+            if not prefixes:
+                raise Exception("Build Prefix가 비어있습니다. 세미콜론(;)으로 구분하여 키워드를 입력하세요.")
+            print(f"[서버최신강제패치] 필터 키워드: {prefixes}")
+
+            if driver is None:
+                print("[서버최신강제패치] ChromeDriver 시작 중...")
+
+                # 기존 Chrome 및 ChromeDriver 프로세스 정리
+                AWSManager.cleanup_chrome_processes()
+
+                try:
+                    driver = AWSManager.start_driver()
+                except Exception as e:
+                    print(f"[서버최신강제패치] ⚠️ ChromeDriver 시작 실패, 5초 후 재시도...")
+                    print(f"[서버최신강제패치] 오류: {e}")
+                    time.sleep(5)
+                    AWSManager.cleanup_chrome_processes()
+                    print("[서버최신강제패치] ChromeDriver 재시작 시도...")
+                    driver = AWSManager.start_driver()
+
+                driver.implicitly_wait(10)
+
+                print(f"[서버최신강제패치] AWS 페이지 이동: {aws_link}")
+                driver.get(aws_link)
+                driver.implicitly_wait(10)
+
+                AWSManager._ensure_aws_deploy_social_oidc_clicked(driver, "[서버최신강제패치]")
+                AWSManager._ensure_keycloak_login(driver, "[서버최신강제패치]")
+
+            driver.implicitly_wait(10)
+            print("[서버최신강제패치] 패치 작업 시작...")
+
+            wait = WebDriverWait(driver, 20)
+
+            # [단계 1/11] CONTAINER GAMESERVERS 클릭
+            try:
+                print("[서버최신강제패치] [단계 1/11] CONTAINER GAMESERVERS 탭 클릭 대기 중...")
+                container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                container_tab.click()
+                time.sleep(1)
+                print("[서버최신강제패치] [단계 1/11] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
+            except TimeoutException:
+                raise Exception("[단계 1/11 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다.")
+
+            # [단계 1/11] SELECT ALL 버튼 클릭
+            try:
+                print("[서버최신강제패치] [단계 1/11] SELECT ALL 버튼 클릭 대기 중...")
+                select_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+                select_all_button.click()
+                time.sleep(1)
+                print("[서버최신강제패치] [단계 1/11] ✅ SELECT ALL 버튼 클릭 완료")
+            except TimeoutException:
+                raise Exception("[단계 1/11 실패] SELECT ALL 버튼을 찾을 수 없습니다.")
+
+            # [단계 2/11] 돋보기 (필터) 버튼 클릭
+            try:
+                print("[서버최신강제패치] [단계 2/11] 필터 버튼 클릭 대기 중...")
+                filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
+                filter_button.click()
+                time.sleep(1)
+                print("[서버최신강제패치] [단계 2/11] ✅ 필터 버튼 클릭 완료")
+            except TimeoutException:
+                raise Exception("[단계 2/11 실패] 필터 버튼을 찾을 수 없습니다.")
+
+            # [단계 3/11] 브랜치 입력
+            try:
+                print(f"[서버최신강제패치] [단계 3/11] 브랜치 입력 필드 대기 중... (브랜치: {branch})")
+                branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                branch_input.clear()
+                branch_input.send_keys(branch)
+                time.sleep(1.5)
+                print(f"[서버최신강제패치] [단계 3/11] ✅ 브랜치 '{branch}' 입력 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 3/11 실패] 브랜치 입력 필드를 찾을 수 없습니다.")
+
+            # [단계 4/11] 정확히 일치하는 branch 선택
+            try:
+                print(f"[서버최신강제패치] [단계 4/11] 브랜치 '{branch}' 검색 중...")
+                branch_found = False
+                for x in range(1, 10):
+                    try:
+                        element = wait.until(EC.presence_of_element_located((By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')))
+                        if element.text == branch:
+                            print(f"[서버최신강제패치] [단계 4/11] 브랜치 '{branch}' 발견 (목록 {x}번째), 클릭")
+                            element.click()
+                            branch_found = True
+                            break
+                    except Exception:
+                        if x == 9:
+                            break
+                        continue
+
+                if not branch_found:
+                    raise Exception(f"[단계 4/11 실패] 브랜치 '{branch}'를 목록에서 찾을 수 없습니다.")
+
+                print(f"[서버최신강제패치] [단계 4/11] ✅ 브랜치 '{branch}' 선택 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 4/11 실패] 브랜치 목록을 찾을 수 없습니다.")
+
+            # [단계 5/11] Next 버튼 (브랜치)
+            try:
+                time.sleep(1)
+                print("[서버최신강제패치] [단계 5/11] Next 버튼 클릭 (브랜치)")
+                next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                next_button1.click()
+                print("[서버최신강제패치] [단계 5/11] ✅ Next 버튼 클릭 완료 (브랜치)")
+            except TimeoutException:
+                raise Exception("[단계 5/11 실패] Next 버튼을 찾을 수 없습니다 (브랜치).")
+
+            # [단계 6/11] TAG 목록에서 rz-multiselect-item의 aria-label 읽기
+            try:
+                print("[서버최신강제패치] [단계 6/11] TAG 드롭다운에서 항목 읽는 중...")
+                # TAG 입력 필드 대기
+                tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
+                time.sleep(1)
+
+                # rz-multiselect-item 요소들의 aria-label 읽기
+                items = driver.find_elements(By.CSS_SELECTOR, 'li.rz-multiselect-item')
+                all_tags = []
+                for item in items:
+                    label = item.get_attribute('aria-label')
+                    if label:
+                        all_tags.append(label)
+
+                print(f"[서버최신강제패치] [단계 6/11] 총 {len(all_tags)}개 TAG 항목 발견")
+                if not all_tags:
+                    raise Exception("[단계 6/11 실패] TAG 항목이 없습니다. 페이지 구조를 확인하세요.")
+
+            except TimeoutException:
+                raise Exception("[단계 6/11 실패] TAG 입력 필드를 찾을 수 없습니다.")
+
+            # [단계 7/11] build_prefix로 필터링 후 최신 리비전 선택
+            try:
+                print(f"[서버최신강제패치] [단계 7/11] 필터링 중... (키워드: {prefixes})")
+                matching_tags = []
+                for label in all_tags:
+                    if all(p in label for p in prefixes):
+                        rev_match = re.search(r'_r(\d+)', label)
+                        if rev_match:
+                            revision = int(rev_match.group(1))
+                            matching_tags.append((revision, label))
+                            print(f"  [매칭] {label} (revision: {revision})")
+
+                if not matching_tags:
+                    raise Exception(
+                        f"[단계 7/11 실패] build_prefix '{build_prefix}'에 해당하는 TAG를 찾을 수 없습니다.\n"
+                        f"전체 TAG 목록 ({len(all_tags)}개): {all_tags[:10]}{'...' if len(all_tags) > 10 else ''}"
+                    )
+
+                # 최고 리비전 선택
+                matching_tags.sort(reverse=True, key=lambda x: x[0])
+                selected_revision, selected_tag = matching_tags[0]
+                print(f"[서버최신강제패치] [단계 7/11] ✅ 선택된 TAG: {selected_tag} (revision: {selected_revision})")
+                print(f"[서버최신강제패치] [단계 7/11] 매칭된 항목 수: {len(matching_tags)}")
+
+            except TimeoutException:
+                raise
+
+            # [단계 8/11] 선택된 TAG 입력 및 선택
+            try:
+                print(f"[서버최신강제패치] [단계 8/11] TAG 입력: {selected_tag}")
+                tag_input.clear()
+                tag_input.send_keys(selected_tag)
+                time.sleep(1)
+
+                # 드롭다운에서 첫 번째 항목 클릭
+                tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
+                tag_option.click()
+                time.sleep(1)
+                print(f"[서버최신강제패치] [단계 8/11] ✅ TAG '{selected_tag}' 선택 완료")
+            except TimeoutException:
+                raise Exception(f"[단계 8/11 실패] TAG '{selected_tag}' 선택에 실패했습니다.")
+
+            # [단계 8/11] Next 버튼 (TAG)
+            try:
+                print("[서버최신강제패치] [단계 8/11] Next 버튼 클릭 (TAG)")
+                next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                next_button2.click()
+                print("[서버최신강제패치] [단계 8/11] ✅ Next 버튼 클릭 완료 (TAG)")
+            except TimeoutException:
+                raise Exception("[단계 8/11 실패] Next 버튼을 찾을 수 없습니다 (TAG).")
+
+            # [단계 9/11] Build config 체크박스
+            try:
+                print("[서버최신강제패치] [단계 9/11] Build config 체크박스 클릭")
+                build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
+                build_config_checkbox.click()
+                time.sleep(1)
+                print("[서버최신강제패치] [단계 9/11] ✅ Build config 체크박스 클릭 완료")
+            except TimeoutException:
+                raise Exception("[단계 9/11 실패] Build config 체크박스를 찾을 수 없습니다.")
+
+            # [단계 10/11] Next 버튼 (Build config)
+            try:
+                print("[서버최신강제패치] [단계 10/11] Next 버튼 클릭 (Build config)")
+                next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                next_button3.click()
+                print("[서버최신강제패치] [단계 10/11] ✅ Next 버튼 클릭 완료 (Build config)")
+            except TimeoutException:
+                raise Exception("[단계 10/11 실패] Next 버튼을 찾을 수 없습니다 (Build config).")
+
+            # [단계 11/11] SELECT 버튼 클릭
+            try:
+                print("[서버최신강제패치] [단계 11/11] SELECT 버튼 클릭")
+                select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
+                select_button.click()
+                time.sleep(1)
+                print("[서버최신강제패치] [단계 11/11] ✅ SELECT 버튼 클릭 완료")
+            except TimeoutException:
+                raise Exception("[단계 11/11 실패] SELECT 버튼을 찾을 수 없습니다.")
+
+            # APPLY 버튼 클릭
+            try:
+                print("[서버최신강제패치] [최종 단계] APPLY 버튼 클릭")
+                apply_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
+                apply_button.click()
+                print("[서버최신강제패치] [최종 단계] ✅ APPLY 버튼 클릭 완료")
+            except TimeoutException:
+                raise Exception("[최종 단계 실패] APPLY 버튼을 찾을 수 없습니다.")
+
+            if not is_debug:
+                # 팝업 OK 버튼
+                try:
+                    print("[서버최신강제패치] [확인] 팝업 OK 버튼 클릭")
+                    ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                    ok_button.click()
+                    print("[서버최신강제패치] [확인] ✅ 팝업 OK 버튼 클릭 완료")
+                    time.sleep(20)
+                    print("[서버최신강제패치] [확인] 팝업 OK 버튼 클릭 완료 후 20초 대기")
+
+                    # 첫 번째 탭 클릭
+                    try:
+                        print("[서버최신강제패치] [완료 단계 1/3] 첫 번째 탭 클릭")
+                        first_tab = None
+                        for attempt in range(10):
+                            try:
+                                first_tab = WebDriverWait(driver, 1).until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
+                                break
+                            except TimeoutException:
+                                print(f"[서버최신강제패치] [완료 단계 1/3] 첫 번째 탭 대기 중... ({attempt + 1}/10)")
+                                time.sleep(1)
+
+                        if first_tab is None:
+                            raise TimeoutException("[완료 단계 1/3] 첫 번째 탭을 10초 동안 찾을 수 없습니다.")
+
+                        first_tab.click()
+                        time.sleep(0.5)
+                        print("[서버최신강제패치] [완료 단계 1/3] ✅ 첫 번째 탭 클릭 완료")
+                    except TimeoutException as e:
+                        raise Exception(f"[완료 단계 1/3 실패] 첫 번째 탭을 찾을 수 없습니다.")
+
+                    # Update with Sync 버튼 클릭
+                    try:
+                        print("[서버최신강제패치] [완료 단계 2/3] Update with Sync 버튼 클릭")
+                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button')))
+                        final_button.click()
+                        time.sleep(0.5)
+                        print("[서버최신강제패치] [완료 단계 2/3] ✅ Update with Sync 버튼 클릭 완료")
+                    except TimeoutException:
+                        raise Exception("[완료 단계 2/3 실패] Update with Sync 버튼을 찾을 수 없습니다.")
+
+                    # Update with Sync OK 버튼
+                    try:
+                        print("[서버최신강제패치] [완료 단계 3/3] Update with Sync OK 버튼 클릭")
+                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        final_button.click()
+                        time.sleep(0.5)
+                        print("[서버최신강제패치] [완료 단계 3/3] ✅ Update with Sync OK 버튼 클릭 완료")
+                    except TimeoutException:
+                        raise Exception("[완료 단계 3/3 실패] Update with Sync OK 버튼을 찾을 수 없습니다.")
+
+                    # 최종 OK 버튼
+                    try:
+                        print("[서버최신강제패치] [완료 단계 4/4] 최종 OK 버튼 클릭")
+                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        final_button.click()
+                        time.sleep(0.5)
+                        print("[서버최신강제패치] [완료 단계 4/4] ✅ 최종 OK 버튼 클릭 완료")
+                    except TimeoutException:
+                        raise Exception("[완료 단계 4/4 실패] 최종 OK 버튼을 찾을 수 없습니다.")
+                    try:
+                        export_upload_result(aws_link, selected_tag, "aws_apply", ":update_done:")
+                    except:
+                        print("[서버최신강제패치] export_upload_result 오류")
+                except TimeoutException as e:
+                    raise Exception(f"[확인 단계 실패] 확인 팝업 OK 버튼을 찾을 수 없습니다.")
+
+            print(f"[서버최신강제패치] ✅ 서버 패치 완료 (TAG: {selected_tag})")
+            return selected_tag
+
+        except TimeoutException as e:
+            error_msg = f"[서버최신강제패치] ❌ 타임아웃: {str(e)}"
+            print(error_msg)
+            try:
+                export_upload_result(aws_link, selected_tag, "aws_apply", ":timeout:")
+            except:
+                print("[서버최신강제패치] export_upload_result 오류")
+            raise
+        except Exception as e:
+            error_msg = f"[서버최신강제패치] ❌ 패치 오류: {str(e)}"
+            print(error_msg)
+            try:
+                export_upload_result(aws_link, selected_tag, "aws_apply", ":failed:")
+            except:
+                print("[서버최신강제패치] export_upload_result 오류")
+            raise
+
+    @staticmethod
     def delete_server_container(driver, aws_link: str):
         """서버 컨테이너 삭제 (모두 선택)"""
         try:
@@ -1211,17 +1807,9 @@ ChromeDriver 버전: {chromedriver_version}
                 # 페이지 로드 대기 (추가)
                 time.sleep(2)
                 
-                try:
-                    print("[delete_server_container] 로그인 확인 중...")
-                    login_btn = driver.find_element(By.XPATH, '//*[@id="social-oidc"]')
-                    login_btn.click()
-                    print("[delete_server_container] 로그인 버튼 클릭")
-                    # 로그인 리다이렉트 대기 (추가)
-                    time.sleep(3)
-                    print("[delete_server_container] 로그인 리다이렉트 대기 완료")
-                except:
-                    print('[delete_server_container] 로그인 스킵 (이미 로그인됨)')
-            
+                AWSManager._ensure_aws_deploy_social_oidc_clicked(driver, "[delete_server_container]")
+                AWSManager._ensure_keycloak_login(driver, "[delete_server_container]")
+
             # 페이지 완전 로드 대기 (추가)
             print("[delete_server_container] 페이지 로딩 대기 중...")
             time.sleep(2)
@@ -1303,12 +1891,11 @@ ChromeDriver 버전: {chromedriver_version}
                 driver = AWSManager.start_driver()
                 driver.implicitly_wait(10)
             
-            # driver가 이미 존재해도 항상 목표 URL로 이동하고, 로드 완료를 확인한다.
+            # driver가 이미 존재해도 항상 목표 URL로 이동
             print(f"[빌드굽기] TeamCity 페이지 이동: {url_link}")
             driver.get(url_link)
-            AWSManager.wait_for_teamcity_page_ready(driver, url_link, timeout=30)
 
-            # 자동 로그인 시도 (리다이렉트가 발생할 수 있으므로 이후에도 로드 완료를 다시 확인)
+            # 자동 로그인 먼저 시도 (미로그인 시 로그인 페이지로 리다이렉트되므로, wait_for_teamcity_page_ready 전에 로그인 수행)
             AWSManager.teamcity_auto_login(driver, teamcity_id, teamcity_pw)
             driver.get(url_link)
             AWSManager.wait_for_teamcity_page_ready(driver, url_link, timeout=30)
@@ -1371,7 +1958,7 @@ ChromeDriver 버전: {chromedriver_version}
             
             try:
                 print("[빌드굽기] [단계 5/9] 브랜치 선택기 열기")
-                branch_selector = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="runBranchSelector_container"]/span/button/span[3]/span')))
+                branch_selector = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="runBranchSelector_container"]/span/button/span[2]')))
                 branch_selector.click()
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 5/9] ✅ 브랜치 선택기 열기 완료")

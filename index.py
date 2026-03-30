@@ -92,8 +92,8 @@ class QuickBuildApp(QMainWindow):
         
         # 실행 옵션 목록
         self.execution_options = [
-            '클라복사', '전체복사', '서버업로드및패치', '서버업로드', 
-            '서버패치', '서버삭제', '서버복사', '빌드굽기', '테스트(로그)', 
+            '클라복사', '전체복사', '서버업로드및패치', '서버업로드',
+            '서버패치', '서버최신강제패치', '서버삭제', '서버복사', '빌드굽기', '테스트(로그)',
             'Chrome프로세스정리', 'TEST'
         ]
         
@@ -466,8 +466,15 @@ class QuickBuildApp(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
         
-        # 스케줄 로드
-        schedules = self.schedule_mgr.load_schedules()
+        # 스케줄 로드 (중복 id 제거 - 2회 이상 실행 시 로그 중복 방지)
+        raw_schedules = self.schedule_mgr.load_schedules()
+        seen_ids = set()
+        schedules = []
+        for s in raw_schedules:
+            sid = s.get('id')
+            if sid and sid not in seen_ids:
+                seen_ids.add(sid)
+                schedules.append(s)
         
         if not schedules:
             # 빈 상태 표시
@@ -492,7 +499,7 @@ class QuickBuildApp(QMainWindow):
                 item_widget.edit_requested.connect(self.edit_schedule)
                 item_widget.delete_requested.connect(self.delete_schedule)
                 item_widget.toggle_requested.connect(self.toggle_schedule)
-                item_widget.run_requested.connect(self.run_schedule_manually)
+                item_widget.run_requested.connect(self.run_schedule_manually, Qt.UniqueConnection)
                 item_widget.stop_requested.connect(self.stop_schedule)
                 item_widget.copy_requested.connect(self.copy_schedule)
                 
@@ -793,6 +800,16 @@ class QuickBuildApp(QMainWindow):
             self.log(f"[실행 중] {schedule.get('name', 'Unknown')} - 이미 실행 중입니다.")
             return
         
+        # 중복 실행 방지: 동일 스케줄이 1.5초 이내 연속 실행 요청 시 스킵 (로그 중복 방지)
+        now = datetime.now()
+        if not hasattr(self, '_schedule_last_run'):
+            self._schedule_last_run = {}
+        last = self._schedule_last_run.get(schedule_id)
+        if last and (now - last).total_seconds() < 1.5:
+            self.log(f"[실행 스킵] {schedule.get('name', 'Unknown')} - 중복 실행 방지")
+            return
+        self._schedule_last_run[schedule_id] = now
+        
         # 작업 함수 생성
         option = schedule.get('option', '')
         buildname = schedule.get('buildname', '')
@@ -802,6 +819,9 @@ class QuickBuildApp(QMainWindow):
         dest_path = schedule.get('dest_path', '')
         max_local_copies = schedule.get('max_local_copies', 0)
         patch_delay = schedule.get('patch_delay', 30)
+        build_prefix = schedule.get('build_prefix', '')
+        teamcity_url = schedule.get('teamcity_url', '')
+        teamcity_branch = schedule.get('teamcity_branch', '')
 
         # 빌드 모드 확인: 'latest' 또는 'fixed'
         build_mode = schedule.get('build_mode', 'latest')
@@ -822,7 +842,7 @@ class QuickBuildApp(QMainWindow):
                 return
         
         # 실행할 함수 결정
-        task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path, max_local_copies, patch_delay, schedule)
+        task_func = lambda: self.execute_option(option, buildname, awsurl, branch, src_path, dest_path, max_local_copies, patch_delay, schedule, build_prefix, teamcity_url, teamcity_branch)
         
         # 워커 스레드 생성 (Debug 모드이면 stdout 캡처)
         worker = ScheduleWorkerThread(schedule, task_func, capture_stdout=self.debug_mode)
@@ -1072,7 +1092,8 @@ class QuickBuildApp(QMainWindow):
     
     def execute_option(self, option: str, buildname: str, awsurl: str, branch: str,
                       src_path: str = '', dest_path: str = '', max_local_copies: int = 0,
-                      patch_delay: int = 30, schedule: dict = None) -> str:
+                      patch_delay: int = 30, schedule: dict = None, build_prefix: str = '',
+                      teamcity_url: str = '', teamcity_branch: str = '') -> str:
         """
         실행 옵션 처리 (실제 작업)
         이 함수는 QThread 내에서 실행됩니다.
@@ -1098,6 +1119,14 @@ class QuickBuildApp(QMainWindow):
             
             print(f"[execute_option] option: {option}, buildname: {buildname}")
             print(f"[execute_option] src_folder: {src_folder}, dest_folder: {dest_folder}")
+            
+            # ChromeDriver 사용 옵션: 기존 세션 재사용 문제 방지 위해 맨앞에 강제 종료
+            CHROMEDRIVER_OPTIONS = {'서버패치', '서버업로드', '서버업로드및패치', '서버최신강제패치', '서버삭제', '빌드굽기'}
+            if option in CHROMEDRIVER_OPTIONS:
+                print(f"[execute_option] ChromeDriver 강제 종료 (기존 세션 재사용 방지)")
+                AWSManager.kill_all_chromedrivers()
+                AWSManager.kill_chrome_on_debug_port(port=AWSManager.CHROME_DEBUGGING_PORT)
+                time.sleep(2)
             
             # buildname이 실제 폴더인지 확인 (전체 빌드명인지 Prefix인지 판단)
             def is_full_buildname(name: str) -> bool:
@@ -1211,8 +1240,37 @@ Branch: {branch}
                     full_build_name=full_buildname
                 )
                 print("[서버패치] AWS Manager 완료")
-                return f"서버패치 완료: {awsurl} ({full_buildname})"
-            
+                return (
+                    f"• AWS: {awsurl}\n"
+                    f"• 빌드: `{full_buildname}`"
+                )
+
+            elif option == "서버최신강제패치":
+                # AWS 최신 TAG 자동 선택 패치
+                if not awsurl:
+                    raise Exception("AWS URL이 설정되지 않았습니다.")
+                if not build_prefix:
+                    raise Exception("Build Prefix가 설정되지 않았습니다. (예: DailyQLOC;game_dev_AMS)")
+
+                print(f"[서버최신강제패치] AWS URL: {awsurl}")
+                print(f"[서버최신강제패치] Branch: {branch}")
+                print(f"[서버최신강제패치] Build Prefix: {build_prefix}")
+
+                print("[서버최신강제패치] AWS Manager 실행 중...")
+                selected_tag = AWSManager.update_latest_server_container(
+                    driver=None,
+                    aws_link=awsurl,
+                    branch=branch,
+                    build_prefix=build_prefix,
+                    is_debug=False
+                )
+                print("[서버최신강제패치] AWS Manager 완료")
+                return (
+                    f"• AWS: {awsurl}\n"
+                    f"• Build: `{selected_tag}`\n"
+                    f"• Prefix: `{build_prefix}`"
+                )
+
             elif option == "서버삭제":
                 # AWS 서버 컨테이너 삭제
                 if not awsurl:
@@ -1254,6 +1312,7 @@ Branch: {branch}
                 teamcity_id, teamcity_pw = self.config_mgr.get_teamcity_credentials()
                 
                 # TeamCity를 통한 서버 배포 실행
+                tc_url = teamcity_url or 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_Deployment_DeployBuild?mode=branches#all-projects'
                 AWSManager.upload_server_build(
                     driver=None,
                     revision=revision,
@@ -1263,8 +1322,20 @@ Branch: {branch}
                     build_type=buildType,
                     full_build_name=full_buildname,
                     teamcity_id=teamcity_id,
-                    teamcity_pw=teamcity_pw
+                    teamcity_pw=teamcity_pw,
+                    teamcity_url=teamcity_url
                 )
+                # 서버업로드 완료 슬랙 알림
+                if schedule:
+                    upload_body = (
+                        f"• TeamCity: {tc_url}\n"
+                        f"• 빌드: `{full_buildname}`"
+                    )
+                    if awsurl:
+                        upload_body += f"\n• AWS: {awsurl}"
+                    self.send_slack_notification_if_enabled(
+                        schedule, '업로드완료', upload_body
+                    )
                 return f"서버업로드 완료: {full_buildname}"
             
             elif option == "서버업로드및패치":
@@ -1282,15 +1353,11 @@ Branch: {branch}
                 revision = self.build_ops.extract_revision_number(full_buildname)
                 buildType = full_buildname.split('_')[1] if '_' in full_buildname else 'DEV'
                 
-                # Chrome 프로세스 초기화
-                os.system('taskkill /F /IM chrome.exe /T 2>nul')
-                os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
-                time.sleep(2)
-                
                 # Teamcity 로그인 정보 가져오기
                 teamcity_id, teamcity_pw = self.config_mgr.get_teamcity_credentials()
                 
                 # TeamCity를 통한 서버 배포 실행
+                tc_url = teamcity_url or 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_Deployment_DeployBuild?mode=branches#all-projects'
                 AWSManager.upload_server_build(
                     driver=None,
                     revision=revision,
@@ -1300,12 +1367,19 @@ Branch: {branch}
                     build_type=buildType,
                     full_build_name=full_buildname,
                     teamcity_id=teamcity_id,
-                    teamcity_pw=teamcity_pw
+                    teamcity_pw=teamcity_pw,
+                    teamcity_url=teamcity_url
                 )
 
-                # 1차 슬랙 알림: 업로드(배포 요청) 완료
+                # 1차 슬랙 알림: 업로드(배포 요청) 완료 — TeamCity·AWS URL 통일 표기
                 if schedule:
-                    self.send_slack_notification_if_enabled(schedule, '업로드완료', f"배포 요청 완료: {awsurl}\n{full_buildname}\n패치 대기: {patch_delay}분")
+                    self.send_slack_notification_if_enabled(
+                        schedule, '업로드완료',
+                        f"• AWS (패치 예정): {awsurl}\n"
+                        f"• 빌드: `{full_buildname}`\n"
+                        f"• TeamCity: {tc_url}\n"
+                        f"• 패치 대기: {patch_delay}분",
+                    )
 
                 # 패치 대기시간 (업로드 완료 후 AWS 반영까지 대기)
                 if patch_delay > 0:
@@ -1325,20 +1399,29 @@ Branch: {branch}
                     is_debug=False,
                     full_build_name=full_buildname
                 )
-                return f"서버업로드및패치 완료: {awsurl} ({full_buildname})"
+                return (
+                    f"• AWS: {awsurl}\n"
+                    f"• 빌드: `{full_buildname}`"
+                )
             
             elif option == "빌드굽기":
                 # Teamcity 로그인 정보 가져오기
                 teamcity_id, teamcity_pw = self.config_mgr.get_teamcity_credentials()
                 
+                # Teamcity URL (미지정 시 기본값 사용)
+                url_link = teamcity_url or 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects'
+                # Teamcity Branch (팀시티 설정에서 지정, 미지정 시 branch 또는 game)
+                tc_branch = teamcity_branch or branch or 'game'
+                
                 # TeamCity 빌드 실행
                 AWSManager.run_teamcity_build(
-                    driver=None, 
-                    branch=branch or buildname,
+                    driver=None,
+                    url_link=url_link,
+                    branch=tc_branch,
                     teamcity_id=teamcity_id,
                     teamcity_pw=teamcity_pw
                 )
-                return f"빌드굽기 완료: {branch or buildname}"
+                return f"빌드굽기 완료: {tc_branch}"
             
             elif option == "Chrome프로세스정리":
                 # Chrome 및 ChromeDriver 프로세스 정리
@@ -1470,7 +1553,9 @@ Branch: {branch}
                 bot_token=bot_token,
                 channel_id=channel_id,
                 thread_keyword=thread_keyword if notification_type in ('thread', 'thread_broadcast') else None,
-                first_message=first_message if first_message else None
+                first_message=first_message if first_message else None,
+                schedule_option=schedule.get('option') or None,
+                plain_message_only=(option == '테스트(로그)'),
             )
             
         except Exception as e:

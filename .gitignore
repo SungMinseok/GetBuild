@@ -51,6 +51,7 @@ SLACK_CREDENTIALS.txt
 # 설정 파일 (개인 설정)
 settings.json
 schedule.json
+schedule - 복사본.json
 config/settings.json
 config/schedule.json
 

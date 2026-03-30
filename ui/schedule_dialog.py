@@ -43,6 +43,8 @@ class ScheduleDialog(QDialog):
         
         if self.is_edit_mode:
             self.load_schedule_data()
+        else:
+            self.on_option_changed(self.option_combo.currentText())
     
     def init_ui(self):
         """UI 초기화"""
@@ -63,6 +65,14 @@ class ScheduleDialog(QDialog):
         # AWS 설정
         aws_group = self.create_aws_settings_group()
         layout.addWidget(aws_group)
+        
+        # 팀시티 설정 (선택사항) - 빌드굽기/서버업로드/서버업로드및패치 시 활성화
+        teamcity_group = self.create_teamcity_settings_group()
+        layout.addWidget(teamcity_group)
+        
+        # 스팀 설정 (서버최신강제패치 시 Steam Build Prefix)
+        steam_group = self.create_steam_settings_group()
+        layout.addWidget(steam_group)
         
         # 슬랙 알림 설정
         slack_group = self.create_slack_settings_group()
@@ -220,13 +230,12 @@ class ScheduleDialog(QDialog):
         self.prefix_edit = QLineEdit()
         self.prefix_edit.setPlaceholderText("예: game_SEL, game_progression")
         layout.addRow("Prefix:", self.prefix_edit)
-        
+
         # 빌드명 드롭다운 + 새로고침 (우측에 배치)
         buildname_layout = QHBoxLayout()
         self.buildname_combo = QComboBox()
         self.buildname_combo.setEditable(True)
         self.buildname_combo.addItems(self.buildnames)
-        self.buildname_combo.setEnabled(False)  # 기본적으로 '최신' 모드이므로 비활성화
         buildname_layout.addWidget(self.buildname_combo)
         
         self.refresh_builds_btn = QPushButton("🔄")
@@ -278,6 +287,48 @@ class ScheduleDialog(QDialog):
         self.patch_delay_spinbox.setEnabled(False)  # 기본 비활성화
         layout.addRow("패치 대기시간:", self.patch_delay_spinbox)
 
+        group.setLayout(layout)
+        return group
+
+    def create_teamcity_settings_group(self) -> QGroupBox:
+        """팀시티 설정 그룹 (빌드굽기/서버업로드/서버업로드및패치 옵션 시 활성화)"""
+        group = QGroupBox("팀시티 설정 (선택사항)")
+        layout = QFormLayout()
+        
+        # Teamcity URL
+        default_teamcity_url = 'https://pbbseoul6-w.bluehole.net/buildConfiguration/BlackBudget_CompileBuild?mode=builds#all-projects'
+        self.teamcity_url_edit = QLineEdit()
+        self.teamcity_url_edit.setPlaceholderText(default_teamcity_url)
+        self.teamcity_url_edit.setEnabled(False)
+        self.teamcity_url_edit.setToolTip("빌드굽기/서버업로드 시 사용할 TeamCity URL")
+        layout.addRow("Teamcity URL:", self.teamcity_url_edit)
+        
+        # Teamcity Branch - 빌드굽기 전용 (run_teamcity_build branch 인자)
+        self.teamcity_branch_edit = QLineEdit()
+        self.teamcity_branch_edit.setPlaceholderText("game, game_dev, etc.")
+        self.teamcity_branch_edit.setEnabled(False)
+        self.teamcity_branch_edit.setToolTip("빌드굽기 실행 시 사용할 브랜치 (run_teamcity_build branch 인자)")
+        layout.addRow("Teamcity Branch:", self.teamcity_branch_edit)
+        
+        group.setLayout(layout)
+        return group
+
+    def create_steam_settings_group(self) -> QGroupBox:
+        """스팀 설정 그룹 (서버최신강제패치 시 Steam Build Prefix)"""
+        group = QGroupBox("스팀 설정")
+        layout = QFormLayout()
+        
+        # Steam Build Prefix (서버최신강제패치 전용)
+        self.build_prefix_edit = QLineEdit()
+        self.build_prefix_edit.setPlaceholderText("예: DailyQLOC;game_dev_AMS")
+        self.build_prefix_edit.setEnabled(False)
+        self.build_prefix_edit.setToolTip(
+            "서버최신강제패치 시 TAG 필터링 키워드\n"
+            "세미콜론(;)으로 구분하여 여러 키워드 입력\n"
+            "모든 키워드가 포함된 TAG 중 최신 리비전 자동 선택"
+        )
+        layout.addRow("Steam Build Prefix:", self.build_prefix_edit)
+        
         group.setLayout(layout)
         return group
 
@@ -685,7 +736,8 @@ class ScheduleDialog(QDialog):
                 'buildname': True,
                 'awsurl': False,
                 'branch': True,
-                'patch_delay': False
+                'patch_delay': False,
+                'teamcity_url': True
             },
             '서버업로드및패치': {
                 'src_path': True,
@@ -693,7 +745,8 @@ class ScheduleDialog(QDialog):
                 'buildname': True,
                 'awsurl': True,
                 'branch': True,
-                'patch_delay': True
+                'patch_delay': True,
+                'teamcity_url': True
             },
             '서버패치': {
                 'src_path': True,
@@ -702,6 +755,16 @@ class ScheduleDialog(QDialog):
                 'awsurl': True,
                 'branch': True,
                 'patch_delay': False
+            },
+            '서버최신강제패치': {
+                'src_path': False,
+                'dest_path': False,
+                'buildname': False,
+                'prefix': True,
+                'awsurl': True,
+                'branch': True,
+                'patch_delay': False,
+                'build_prefix': True
             },
             '서버삭제': {
                 'src_path': False,
@@ -716,8 +779,10 @@ class ScheduleDialog(QDialog):
                 'dest_path': False,
                 'buildname': False,
                 'awsurl': False,
-                'branch': True,
-                'patch_delay': False
+                'branch': False,
+                'patch_delay': False,
+                'teamcity_url': True,
+                'teamcity_branch': True
             },
             '테스트(로그)': {
                 'src_path': False,
@@ -733,7 +798,8 @@ class ScheduleDialog(QDialog):
                 'buildname': False,
                 'awsurl': False,
                 'branch': False,
-                'patch_delay': False
+                'patch_delay': False,
+                'teamcity_url': False
             },
             'TEST': {
                 'src_path': False,
@@ -741,7 +807,8 @@ class ScheduleDialog(QDialog):
                 'buildname': False,
                 'awsurl': False,
                 'branch': False,
-                'patch_delay': False
+                'patch_delay': False,
+                'teamcity_url': False
             }
         }
         
@@ -760,22 +827,23 @@ class ScheduleDialog(QDialog):
         self.awsurl_edit.setEnabled(requirements.get('awsurl', True))
         self.branch_edit.setEnabled(requirements.get('branch', True))
         self.patch_delay_spinbox.setEnabled(requirements.get('patch_delay', False))
-        
-        # buildname 관련 필드들
+        self.build_prefix_edit.setEnabled(requirements.get('build_prefix', False))
+        self.teamcity_url_edit.setEnabled(requirements.get('teamcity_url', False))
+        self.teamcity_branch_edit.setEnabled(requirements.get('teamcity_branch', False))
+
+        # buildname 관련 필드들 (최신/지정 모드 모두 빌드명 드롭다운 활성화)
         buildname_required = requirements.get('buildname', True)
-        self.prefix_edit.setEnabled(buildname_required)
-        # buildname_combo는 빌드 모드에 따라 제어되므로 여기서는 건드리지 않음
-        # 단, 빌드 모드 라디오 버튼은 비활성화
+        self.prefix_edit.setEnabled(requirements.get('prefix', buildname_required))
         self.build_mode_latest.setEnabled(buildname_required)
         self.build_mode_fixed.setEnabled(buildname_required)
         self.refresh_builds_btn.setEnabled(buildname_required)
+        self.buildname_combo.setEnabled(buildname_required)
     
     def on_build_mode_changed(self):
         """빌드 모드 변경 (최신 / 지정)"""
-        is_fixed_mode = self.build_mode_fixed.isChecked()
-        # 지정 모드일 때만 빌드명 드롭다운 활성화
-        self.buildname_combo.setEnabled(is_fixed_mode)
-        # Prefix는 항상 활성화 (self.prefix_edit는 항상 사용 가능)
+        # 최신/지정 모드 모두 빌드명 드롭다운 활성화
+        if self.build_mode_latest.isEnabled() or self.build_mode_fixed.isEnabled():
+            self.buildname_combo.setEnabled(True)
     
     def refresh_build_list(self):
         """Prefix 기준으로 빌드명 드롭다운 새로고침"""
@@ -898,6 +966,13 @@ class ScheduleDialog(QDialog):
         self.awsurl_edit.setText(self.schedule.get('awsurl', ''))
         self.branch_edit.setText(self.schedule.get('branch', ''))
         self.patch_delay_spinbox.setValue(self.schedule.get('patch_delay', 30))
+
+        # 팀시티 설정
+        self.teamcity_url_edit.setText(self.schedule.get('teamcity_url', ''))
+        self.teamcity_branch_edit.setText(self.schedule.get('teamcity_branch', ''))
+
+        # Steam Build Prefix (스팀 설정)
+        self.build_prefix_edit.setText(self.schedule.get('build_prefix', ''))
 
         # 슬랙 알림 설정
         slack_webhook = self.schedule.get('slack_webhook', '')
@@ -1048,6 +1123,9 @@ class ScheduleDialog(QDialog):
             'awsurl': self.awsurl_edit.text().strip(),
             'branch': self.branch_edit.text().strip(),
             'patch_delay': self.patch_delay_spinbox.value(),
+            'build_prefix': self.build_prefix_edit.text().strip(),
+            'teamcity_url': self.teamcity_url_edit.text().strip(),
+            'teamcity_branch': self.teamcity_branch_edit.text().strip(),
             'repeat_type': repeat_type,
             'repeat_days': repeat_days,
             'enabled': self.enabled_checkbox.isChecked(),
