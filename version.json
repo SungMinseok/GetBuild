@@ -1,8 +1,15 @@
 {
-  "version": "3.0.4",
-  "build_date": "2026-02-13",
+  "version": "3.0.5",
+  "build_date": "2026-03-30",
   "update_url": "https://api.github.com/repos/SungMinseok/GetBuild/releases/latest",
   "changelog": [
+    {
+      "version": "3.0.5",
+      "date": "2026-03-30",
+      "changes": [
+        "스케줄 기능 대폭 확장 \n서버최신강제패치 옵션 추가 (Build Prefix 기반 최신 리비전 자동 선택) \nTeamCity / Steam 관련 설정을 스케줄 UI에서 직접 입력 가능 \n작업별로 TeamCity URL 개별 지정 지원 \n안정성 및 중복 실행 방지 \n스케줄 중복 ID 제거 및 시그널 중복 연결 방지 \n짧은 시간 내 동일 스케줄 재실행 자동 스킵 \n작업 실행 전 ChromeDriver/Chrome 프로세스 강제 초기화 \nSlack 알림 개선 \n색상 기반 Attachment 스타일 적용 (성공=녹색, 실패=빨강) \nAWS URL, 빌드명, TeamCity 정보 구조화 표시 \n불필요한 상태 문구 제거 \nSelenium 자동화 안정성 향상 \nJS 기반 클릭 방식 도입으로 화면 상태 영향 제거 \n모니터 꺼짐/원격 환경에서도 정상 동작 \n대기 조건 완화 및 Chrome 옵션/해상도 강제 설정으로 안정성 개선"
+      ]
+    },
     {
       "version": "3.0.4",
       "date": "2026-02-13",
