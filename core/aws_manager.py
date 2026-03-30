@@ -71,7 +71,7 @@ class AWSManager:
                 # 로그인 버튼 클릭
                 login_button = driver.find_element(By.XPATH, '/html/body/div[1]/div/div/div[2]/form/div[4]/input')
                 print("[Teamcity 로그인] 로그인 버튼 클릭")
-                login_button.click()
+                AWSManager._safe_click(driver, login_button)
                 
                 # 로그인 완료 대기 (페이지 로드)
                 time.sleep(3)
@@ -617,10 +617,15 @@ class AWSManager:
     def _scroll_into_view(driver, element):
         """요소를 뷰포트 내로 스크롤 (화면 쏠림 시 요소 미노출 방지)"""
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'center'});", element)
             time.sleep(0.2)
         except Exception:
             pass
+
+    @staticmethod
+    def _safe_click(driver, element):
+        """JS 클릭 - 모니터 꺼짐/해상도 변경/원격접속 환경에서도 뷰포트와 무관하게 동작"""
+        driver.execute_script("arguments[0].click();", element)
     
     _AWS_DEPLOY_SOCIAL_OIDC_XPATH = '//*[@id="social-oidc"]'
     
@@ -650,9 +655,8 @@ class AWSManager:
                     print(f"{log_prefix} OIDC 버튼 비표시 → 로그인 플로우 진행")
                     return
                 AWSManager._scroll_into_view(driver, btn)
-                WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath)))
                 btn = driver.find_element(By.XPATH, xpath)
-                btn.click()
+                AWSManager._safe_click(driver, btn)
                 print(f"{log_prefix} 로그인 버튼 클릭 완료")
                 time.sleep(2)
                 return
@@ -712,9 +716,9 @@ class AWSManager:
         xpath = AWSManager._KEYCLOAK_KRAFTON_XPATH
         wait = WebDriverWait(driver, wait_sec)
         try:
-            btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            btn = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
             AWSManager._scroll_into_view(driver, btn)
-            btn.click()
+            AWSManager._safe_click(driver, btn)
             print(f"{log_prefix} 'Sign in through KRAFTON' 클릭 완료")
             # 로그인 후 리다이렉트 대기
             time.sleep(3)
@@ -780,10 +784,12 @@ class AWSManager:
             driver.maximize_window()
             time.sleep(0.5)
         except Exception:
-            try:
-                driver.set_window_size(1920, 1080)
-            except Exception:
-                pass
+            pass
+        # 모니터 꺼짐/원격접속 시 maximize가 0x0이 될 수 있으므로 항상 강제 설정
+        try:
+            driver.set_window_size(1920, 1080)
+        except Exception:
+            pass
         try:
             driver.execute_script("document.body.style.zoom='100%'")
         except Exception:
@@ -909,6 +915,8 @@ ChromeDriver 버전: {chromedriver_version}
             '--window-size=1920,1080',  # 최소 크기 보장 (고해상도/다중 모니터)
             '--force-device-scale-factor=1',  # DPI 스케일 100% 고정
             '--disable-gpu',
+            '--disable-backgrounding-occluded-windows',  # 가려진 창 최적화 비활성화 (모니터 꺼짐 대응)
+            '--disable-renderer-backgrounding',          # 백그라운드 렌더러 비활성화 (원격접속 대응)
         ]
         
         try:
@@ -1017,18 +1025,18 @@ ChromeDriver 버전: {chromedriver_version}
                 
                 # 첫 번째 XPath 시도
                 try:
-                    run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath0)))
+                    run_button = wait.until(EC.presence_of_element_located((By.XPATH, run_button_xpath0)))
                     print("[서버업로드] [단계 1/6] Run 버튼 클릭 (XPath 0)")
-                    run_button.click()
+                    AWSManager._safe_click(driver, run_button)
                     run_button_clicked = True
                     print("[서버업로드] [단계 1/6] ✅ Run 버튼 클릭 완료 (XPath 0)")
                 except TimeoutException:
                     print("[서버업로드] [단계 1/6] ⚠️ XPath 0 실패, XPath 1 시도 중...")
                     # 두 번째 XPath 시도
                     try:
-                        run_button = wait.until(EC.element_to_be_clickable((By.XPATH, run_button_xpath1)))
+                        run_button = wait.until(EC.presence_of_element_located((By.XPATH, run_button_xpath1)))
                         print("[서버업로드] [단계 1/6] Run 버튼 클릭 (XPath 1)")
-                        run_button.click()
+                        AWSManager._safe_click(driver, run_button)
                         run_button_clicked = True
                         print("[서버업로드] [단계 1/6] ✅ Run 버튼 클릭 완료 (XPath 1)")
                     except TimeoutException:
@@ -1041,8 +1049,8 @@ ChromeDriver 버전: {chromedriver_version}
                 # 대체 XPath 시도
                 alternative_xpath = "//button[contains(@class, 'btn-run') or contains(text(), 'Run')]"
                 try:
-                    run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_xpath)))
-                    run_button.click()
+                    run_button = wait.until(EC.presence_of_element_located((By.XPATH, alternative_xpath)))
+                    AWSManager._safe_click(driver, run_button)
                     print("[서버업로드] [단계 1/6] ✅ 대체 XPath로 Run 버튼 클릭 성공")
                 except Exception as e:
                     raise Exception(f"[서버업로드] [단계 1/6 실패] Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었거나 로그인이 필요합니다. XPath: {run_button_xpath}, 대체: {alternative_xpath}")
@@ -1052,28 +1060,27 @@ ChromeDriver 버전: {chromedriver_version}
             # 탭 0 클릭
             try:
                 print("[서버업로드] [단계 2/6] 탭 0 클릭")
-                tab0 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-0"]/p/a')))
-                tab0.click()
+                tab0 = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="tab-0"]/p/a')))
+                AWSManager._safe_click(driver, tab0)
                 time.sleep(0.5)
                 print("[서버업로드] [단계 2/6] ✅ 탭 0 클릭 완료")
             except TimeoutException:
                 raise Exception(f"[서버업로드] [단계 2/6 실패] 탭 0을 찾을 수 없습니다. XPath: //*[@id=\"tab-0\"]/p/a")
-            
+
             # moveToTop 클릭
             try:
                 print("[서버업로드] [단계 3/6] moveToTop 클릭")
-                
-                driver.find_element(By.XPATH,'//*[@id="moveToTop"]').click()
+                AWSManager._safe_click(driver, driver.find_element(By.XPATH, '//*[@id="moveToTop"]'))
                 time.sleep(0.5)
                 print("[서버업로드] [단계 3/6] ✅ moveToTop 클릭 완료")
             except TimeoutException:
                 raise Exception(f"[서버업로드] [단계 3/6 실패] moveToTop 버튼을 찾을 수 없습니다. XPath: //*[@id=\"moveToTop\"]")
-            
+
             # 탭 3 클릭
             try:
                 print("[서버업로드] [단계 4/6] 탭 3 클릭")
-                tab3 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-3"]/p/a')))
-                tab3.click()
+                tab3 = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="tab-3"]/p/a')))
+                AWSManager._safe_click(driver, tab3)
                 time.sleep(0.5)
                 print("[서버업로드] [단계 4/6] ✅ 탭 3 클릭 완료")
             except TimeoutException:
@@ -1085,8 +1092,6 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 print(f"[서버업로드] [단계 5/6] 빌드 경로 입력 필드 대기 중... (빌드: {full_build_name})")
                 path_input = wait.until(EC.presence_of_element_located((By.XPATH, path_input_xpath)))
-                # 입력 가능할 때까지 추가 대기
-                wait.until(EC.element_to_be_clickable((By.XPATH, path_input_xpath)))
             except TimeoutException:
                 print("[서버업로드] [단계 5/6] ⚠️ 빌드 경로 입력 필드를 찾을 수 없습니다. 대체 방법 시도...")
                 # name 속성으로 찾기 시도
@@ -1114,17 +1119,17 @@ ChromeDriver 버전: {chromedriver_version}
             
             try:
                 print("[서버업로드] [단계 6/6] 최종 Run 버튼 대기 중...")
-                final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, final_run_button_xpath)))
+                final_run_button = wait.until(EC.presence_of_element_located((By.XPATH, final_run_button_xpath)))
                 print("[서버업로드] [단계 6/6] 최종 Run 버튼 클릭")
-                final_run_button.click()
+                AWSManager._safe_click(driver, final_run_button)
                 print("[서버업로드] [단계 6/6] ✅ 최종 Run 버튼 클릭 완료")
             except TimeoutException:
                 print("[서버업로드] [단계 6/6] ⚠️ 최종 Run 버튼을 찾을 수 없습니다. 대체 방법 시도...")
                 try:
                     # 대체 XPath 시도
                     alternative_final_xpath = "//button[contains(@id, 'runCustomBuild') or contains(text(), 'Run')]"
-                    final_run_button = wait.until(EC.element_to_be_clickable((By.XPATH, alternative_final_xpath)))
-                    final_run_button.click()
+                    final_run_button = wait.until(EC.presence_of_element_located((By.XPATH, alternative_final_xpath)))
+                    AWSManager._safe_click(driver, final_run_button)
                     print("[서버업로드] [단계 6/6] ✅ 대체 XPath로 최종 Run 버튼 클릭 성공")
                 except Exception as e:
                     raise Exception(f"[서버업로드] [단계 6/6 실패] 최종 Run 버튼을 찾을 수 없습니다. TeamCity 페이지 구조가 변경되었을 수 있습니다. XPath: {final_run_button_xpath}")
@@ -1208,28 +1213,28 @@ ChromeDriver 버전: {chromedriver_version}
             # CONTAINER GAMESERVERS 클릭
             try:
                 print("[update_server_container] [단계 1/11] CONTAINER GAMESERVERS 탭 클릭 대기 중...")
-                container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
-                container_tab.click()
+                container_tab = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                AWSManager._safe_click(driver, container_tab)
                 time.sleep(1)
                 print("[update_server_container] [단계 1/11] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 1/11 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다. 로그인이 필요하거나 페이지 구조가 변경되었을 수 있습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")
-            
+
             # SELECT ALL 버튼 클릭
             try:
                 print("[update_server_container] [단계 1/11] SELECT ALL 버튼 클릭 대기 중...")
-                select_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
-                select_all_button.click()
+                select_all_button = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+                AWSManager._safe_click(driver, select_all_button)
                 time.sleep(1)
                 print("[update_server_container] [단계 1/11] ✅ SELECT ALL 버튼 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 1/11 실패] SELECT ALL 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")
-            
+
             # 돋보기 (필터) 버튼 클릭
             try:
                 print("[update_server_container] [단계 2/11] 필터 버튼 클릭 대기 중...")
-                filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
-                filter_button.click()
+                filter_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
+                AWSManager._safe_click(driver, filter_button)
                 time.sleep(1)
                 print("[update_server_container] [단계 2/11] ✅ 필터 버튼 클릭 완료")
             except TimeoutException as e:
@@ -1240,7 +1245,6 @@ ChromeDriver 버전: {chromedriver_version}
                 print(f"[update_server_container] [단계 3/11] 브랜치 입력 필드 대기 중... (브랜치: {branch})")
                 branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 AWSManager._scroll_into_view(driver, branch_input)
-                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 branch_input.clear()
                 branch_input.send_keys(branch)
                 time.sleep(1.5)
@@ -1258,7 +1262,7 @@ ChromeDriver 버전: {chromedriver_version}
                         if element.text == branch:
                             print(f"[update_server_container] [단계 4/11] 브랜치 '{branch}' 발견 (목록 {x}번째), 클릭")
                             AWSManager._scroll_into_view(driver, element)
-                            element.click()
+                            AWSManager._safe_click(driver, element)
                             branch_found = True
                             break
                     except Exception as e:
@@ -1279,8 +1283,7 @@ ChromeDriver 버전: {chromedriver_version}
                 print("[update_server_container] [단계 5/11] Next 버튼 클릭 (브랜치)")
                 next_button1 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
                 AWSManager._scroll_into_view(driver, next_button1)
-                next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-                next_button1.click()
+                AWSManager._safe_click(driver, next_button1)
                 print("[update_server_container] [단계 5/11] ✅ Next 버튼 클릭 완료 (브랜치)")
             except TimeoutException as e:
                 raise Exception(f"[단계 5/11 실패] Next 버튼을 찾을 수 없습니다 (브랜치). XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]")
@@ -1290,7 +1293,6 @@ ChromeDriver 버전: {chromedriver_version}
                 print(f"[update_server_container] [단계 6/11] TAG 입력 필드 대기 중... (TAG: {full_build_name})")
                 tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 AWSManager._scroll_into_view(driver, tag_input)
-                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 tag_input.clear()
                 tag_input.send_keys(full_build_name)
                 time.sleep(1)
@@ -1303,74 +1305,69 @@ ChromeDriver 버전: {chromedriver_version}
                 print("[update_server_container] [단계 7/11] TAG 선택")
                 tag_option = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
                 AWSManager._scroll_into_view(driver, tag_option)
-                tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
-                tag_option.click()
+                AWSManager._safe_click(driver, tag_option)
                 time.sleep(1)
                 print("[update_server_container] [단계 7/11] ✅ TAG 선택 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 7/11 실패] 해당 서버가 업로드 되지 않았습니다.\n{full_build_name}")
-            
+
             # Next 버튼 (TAG)
             try:
                 print("[update_server_container] [단계 8/11] Next 버튼 클릭 (TAG)")
                 next_button2 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
                 AWSManager._scroll_into_view(driver, next_button2)
-                next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-                next_button2.click()
+                AWSManager._safe_click(driver, next_button2)
                 print("[update_server_container] [단계 8/11] ✅ Next 버튼 클릭 완료 (TAG)")
             except TimeoutException as e:
                 raise Exception(f"[단계 8/11 실패] Next 버튼을 찾을 수 없습니다 (TAG). XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]")
-            
+
             # Build config 체크박스
             try:
                 print("[update_server_container] [단계 9/11] Build config 체크박스 클릭")
                 build_config_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
                 AWSManager._scroll_into_view(driver, build_config_checkbox)
-                build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
-                build_config_checkbox.click()
+                AWSManager._safe_click(driver, build_config_checkbox)
                 time.sleep(1)
                 print("[update_server_container] [단계 9/11] ✅ Build config 체크박스 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 9/11 실패] Build config 체크박스를 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]")
-            
+
             # Next 버튼 (Build config)
             try:
                 print("[update_server_container] [단계 10/11] Next 버튼 클릭 (Build config)")
                 next_button3 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
                 AWSManager._scroll_into_view(driver, next_button3)
-                next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-                next_button3.click()
+                AWSManager._safe_click(driver, next_button3)
                 print("[update_server_container] [단계 10/11] ✅ Next 버튼 클릭 완료 (Build config)")
             except TimeoutException as e:
                 raise Exception(f"[단계 10/11 실패] Next 버튼을 찾을 수 없습니다 (Build config). XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]")
-            
+
             # SELECT 버튼 클릭
             try:
                 print("[update_server_container] [단계 11/11] SELECT 버튼 클릭")
                 select_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
                 AWSManager._scroll_into_view(driver, select_button)
-                select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
-                select_button.click()
+                AWSManager._safe_click(driver, select_button)
                 time.sleep(1)
                 print("[update_server_container] [단계 11/11] ✅ SELECT 버튼 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 11/11 실패] SELECT 버튼을 찾을 수 없습니다. XPath: /html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button")
-            
+
             # APPLY 버튼 클릭
             try:
                 print("[update_server_container] [최종 단계] APPLY 버튼 클릭")
-                apply_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
-                apply_button.click()
+                apply_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
+                AWSManager._safe_click(driver, apply_button)
                 print("[update_server_container] [최종 단계] ✅ APPLY 버튼 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[최종 단계 실패] APPLY 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]")
-            
+
             if not is_debug:
                 # 팝업 OK 버튼
                 try:
                     print("[update_server_container] [확인] 팝업 OK 버튼 클릭")
-                    ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                    ok_button.click()
+                    ok_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                    AWSManager._safe_click(driver, ok_button)
                     print("[update_server_container] [확인] ✅ 팝업 OK 버튼 클릭 완료")
                     time.sleep(20)
                     print("[update_server_container] [확인] 팝업 OK 버튼 클릭 완료 후 20초 대기")
@@ -1381,36 +1378,36 @@ ChromeDriver 버전: {chromedriver_version}
                         first_tab = None
                         for attempt in range(10):
                             try:
-                                first_tab = WebDriverWait(driver, 1).until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
+                                first_tab = WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
                                 break
                             except TimeoutException:
                                 print(f"[update_server_container] [완료 단계 1/3] 첫 번째 탭 대기 중... ({attempt + 1}/10)")
                                 time.sleep(1)
-                        
+
                         if first_tab is None:
                             raise TimeoutException("[완료 단계 1/3] 첫 번째 탭을 10초 동안 찾을 수 없습니다.")
-                        
-                        first_tab.click()
+
+                        AWSManager._safe_click(driver, first_tab)
                         time.sleep(0.5)
                         print("[update_server_container] [완료 단계 1/3] ✅ 첫 번째 탭 클릭 완료")
                     except TimeoutException as e:
                         raise Exception(f"[완료 단계 1/2 실패] 첫 번째 탭을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a")
-                    
+
                     # Update with Sync 버튼 클릭
                     try:
                         print("[update_server_container] [완료 단계 2/3] Update with Sync 버튼 클릭")
-                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button')))
-                        final_button.click()
+                        final_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button')))
+                        AWSManager._safe_click(driver, final_button)
                         time.sleep(0.5)
                         print("[update_server_container] [완료 단계 2/3] ✅ Update with Sync 버튼 클릭 완료")
                     except TimeoutException as e:
                         raise Exception(f"[완료 단계 2/2 실패] 최종 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button")
-                    
+
                     #아래가 진짜 최종 버튼 OK /html/body/div[3]/div[1]/div[2]/div/button[1]
                     try:
                         print("[update_server_container] [완료 단계 3/3] Update with Sync OK 버튼 클릭")
-                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                        final_button.click()
+                        final_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        AWSManager._safe_click(driver, final_button)
                         time.sleep(0.5)
                         print("[update_server_container] [완료 단계 3/3] ✅ Update with Sync OK 버튼 클릭 완료")
                     except TimeoutException as e:
@@ -1419,8 +1416,8 @@ ChromeDriver 버전: {chromedriver_version}
                     #아래가 진짜 최종 OK /html/body/div[3]/div[1]/div[2]/div/button[1]
                     try:
                         print("[update_server_container] [완료 단계 4/4] 최종 OK 버튼 클릭")
-                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                        final_button.click()
+                        final_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        AWSManager._safe_click(driver, final_button)
                         time.sleep(0.5)
                         print("[update_server_container] [완료 단계 4/4] ✅ 최종 OK 버튼 클릭 완료")
                     except TimeoutException as e:
@@ -1513,8 +1510,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 1/11] CONTAINER GAMESERVERS 클릭
             try:
                 print("[서버최신강제패치] [단계 1/11] CONTAINER GAMESERVERS 탭 클릭 대기 중...")
-                container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
-                container_tab.click()
+                container_tab = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                AWSManager._safe_click(driver, container_tab)
                 time.sleep(1)
                 print("[서버최신강제패치] [단계 1/11] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
             except TimeoutException:
@@ -1523,8 +1520,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 1/11] SELECT ALL 버튼 클릭
             try:
                 print("[서버최신강제패치] [단계 1/11] SELECT ALL 버튼 클릭 대기 중...")
-                select_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
-                select_all_button.click()
+                select_all_button = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+                AWSManager._safe_click(driver, select_all_button)
                 time.sleep(1)
                 print("[서버최신강제패치] [단계 1/11] ✅ SELECT ALL 버튼 클릭 완료")
             except TimeoutException:
@@ -1533,8 +1530,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 2/11] 돋보기 (필터) 버튼 클릭
             try:
                 print("[서버최신강제패치] [단계 2/11] 필터 버튼 클릭 대기 중...")
-                filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
-                filter_button.click()
+                filter_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/div/button')))
+                AWSManager._safe_click(driver, filter_button)
                 time.sleep(1)
                 print("[서버최신강제패치] [단계 2/11] ✅ 필터 버튼 클릭 완료")
             except TimeoutException:
@@ -1544,7 +1541,6 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 print(f"[서버최신강제패치] [단계 3/11] 브랜치 입력 필드 대기 중... (브랜치: {branch})")
                 branch_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
-                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 branch_input.clear()
                 branch_input.send_keys(branch)
                 time.sleep(1.5)
@@ -1561,7 +1557,7 @@ ChromeDriver 버전: {chromedriver_version}
                         element = wait.until(EC.presence_of_element_located((By.XPATH, f'/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[{x}]/span')))
                         if element.text == branch:
                             print(f"[서버최신강제패치] [단계 4/11] 브랜치 '{branch}' 발견 (목록 {x}번째), 클릭")
-                            element.click()
+                            AWSManager._safe_click(driver, element)
                             branch_found = True
                             break
                     except Exception:
@@ -1580,8 +1576,8 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 time.sleep(1)
                 print("[서버최신강제패치] [단계 5/11] Next 버튼 클릭 (브랜치)")
-                next_button1 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-                next_button1.click()
+                next_button1 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                AWSManager._safe_click(driver, next_button1)
                 print("[서버최신강제패치] [단계 5/11] ✅ Next 버튼 클릭 완료 (브랜치)")
             except TimeoutException:
                 raise Exception("[단계 5/11 실패] Next 버튼을 찾을 수 없습니다 (브랜치).")
@@ -1591,7 +1587,6 @@ ChromeDriver 버전: {chromedriver_version}
                 print("[서버최신강제패치] [단계 6/11] TAG 드롭다운에서 항목 읽는 중...")
                 # TAG 입력 필드 대기
                 tag_input = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
-                wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[2]/div/input')))
                 time.sleep(1)
 
                 # rz-multiselect-item 요소들의 aria-label 읽기
@@ -1644,8 +1639,8 @@ ChromeDriver 버전: {chromedriver_version}
                 time.sleep(1)
 
                 # 드롭다운에서 첫 번째 항목 클릭
-                tag_option = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
-                tag_option.click()
+                tag_option = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div[3]/ul/li[1]/span')))
+                AWSManager._safe_click(driver, tag_option)
                 time.sleep(1)
                 print(f"[서버최신강제패치] [단계 8/11] ✅ TAG '{selected_tag}' 선택 완료")
             except TimeoutException:
@@ -1654,8 +1649,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 8/11] Next 버튼 (TAG)
             try:
                 print("[서버최신강제패치] [단계 8/11] Next 버튼 클릭 (TAG)")
-                next_button2 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-                next_button2.click()
+                next_button2 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                AWSManager._safe_click(driver, next_button2)
                 print("[서버최신강제패치] [단계 8/11] ✅ Next 버튼 클릭 완료 (TAG)")
             except TimeoutException:
                 raise Exception("[단계 8/11 실패] Next 버튼을 찾을 수 없습니다 (TAG).")
@@ -1663,8 +1658,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 9/11] Build config 체크박스
             try:
                 print("[서버최신강제패치] [단계 9/11] Build config 체크박스 클릭")
-                build_config_checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
-                build_config_checkbox.click()
+                build_config_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/div/div/div[2]')))
+                AWSManager._safe_click(driver, build_config_checkbox)
                 time.sleep(1)
                 print("[서버최신강제패치] [단계 9/11] ✅ Build config 체크박스 클릭 완료")
             except TimeoutException:
@@ -1673,8 +1668,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 10/11] Next 버튼 (Build config)
             try:
                 print("[서버최신강제패치] [단계 10/11] Next 버튼 클릭 (Build config)")
-                next_button3 = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
-                next_button3.click()
+                next_button3 = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[2]/a[2]')))
+                AWSManager._safe_click(driver, next_button3)
                 print("[서버최신강제패치] [단계 10/11] ✅ Next 버튼 클릭 완료 (Build config)")
             except TimeoutException:
                 raise Exception("[단계 10/11 실패] Next 버튼을 찾을 수 없습니다 (Build config).")
@@ -1682,8 +1677,8 @@ ChromeDriver 버전: {chromedriver_version}
             # [단계 11/11] SELECT 버튼 클릭
             try:
                 print("[서버최신강제패치] [단계 11/11] SELECT 버튼 클릭")
-                select_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
-                select_button.click()
+                select_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/div/div[1]/div/button')))
+                AWSManager._safe_click(driver, select_button)
                 time.sleep(1)
                 print("[서버최신강제패치] [단계 11/11] ✅ SELECT 버튼 클릭 완료")
             except TimeoutException:
@@ -1692,8 +1687,8 @@ ChromeDriver 버전: {chromedriver_version}
             # APPLY 버튼 클릭
             try:
                 print("[서버최신강제패치] [최종 단계] APPLY 버튼 클릭")
-                apply_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
-                apply_button.click()
+                apply_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[3]')))
+                AWSManager._safe_click(driver, apply_button)
                 print("[서버최신강제패치] [최종 단계] ✅ APPLY 버튼 클릭 완료")
             except TimeoutException:
                 raise Exception("[최종 단계 실패] APPLY 버튼을 찾을 수 없습니다.")
@@ -1702,8 +1697,8 @@ ChromeDriver 버전: {chromedriver_version}
                 # 팝업 OK 버튼
                 try:
                     print("[서버최신강제패치] [확인] 팝업 OK 버튼 클릭")
-                    ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                    ok_button.click()
+                    ok_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                    AWSManager._safe_click(driver, ok_button)
                     print("[서버최신강제패치] [확인] ✅ 팝업 OK 버튼 클릭 완료")
                     time.sleep(20)
                     print("[서버최신강제패치] [확인] 팝업 OK 버튼 클릭 완료 후 20초 대기")
@@ -1714,7 +1709,7 @@ ChromeDriver 버전: {chromedriver_version}
                         first_tab = None
                         for attempt in range(10):
                             try:
-                                first_tab = WebDriverWait(driver, 1).until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
+                                first_tab = WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/ul/li[1]/a')))
                                 break
                             except TimeoutException:
                                 print(f"[서버최신강제패치] [완료 단계 1/3] 첫 번째 탭 대기 중... ({attempt + 1}/10)")
@@ -1723,7 +1718,7 @@ ChromeDriver 버전: {chromedriver_version}
                         if first_tab is None:
                             raise TimeoutException("[완료 단계 1/3] 첫 번째 탭을 10초 동안 찾을 수 없습니다.")
 
-                        first_tab.click()
+                        AWSManager._safe_click(driver, first_tab)
                         time.sleep(0.5)
                         print("[서버최신강제패치] [완료 단계 1/3] ✅ 첫 번째 탭 클릭 완료")
                     except TimeoutException as e:
@@ -1732,8 +1727,8 @@ ChromeDriver 버전: {chromedriver_version}
                     # Update with Sync 버튼 클릭
                     try:
                         print("[서버최신강제패치] [완료 단계 2/3] Update with Sync 버튼 클릭")
-                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button')))
-                        final_button.click()
+                        final_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div[3]/div/div[2]/div/div/form/fieldset/div/div/div[7]/div/button')))
+                        AWSManager._safe_click(driver, final_button)
                         time.sleep(0.5)
                         print("[서버최신강제패치] [완료 단계 2/3] ✅ Update with Sync 버튼 클릭 완료")
                     except TimeoutException:
@@ -1742,8 +1737,8 @@ ChromeDriver 버전: {chromedriver_version}
                     # Update with Sync OK 버튼
                     try:
                         print("[서버최신강제패치] [완료 단계 3/3] Update with Sync OK 버튼 클릭")
-                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                        final_button.click()
+                        final_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        AWSManager._safe_click(driver, final_button)
                         time.sleep(0.5)
                         print("[서버최신강제패치] [완료 단계 3/3] ✅ Update with Sync OK 버튼 클릭 완료")
                     except TimeoutException:
@@ -1752,8 +1747,8 @@ ChromeDriver 버전: {chromedriver_version}
                     # 최종 OK 버튼
                     try:
                         print("[서버최신강제패치] [완료 단계 4/4] 최종 OK 버튼 클릭")
-                        final_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
-                        final_button.click()
+                        final_button = wait.until(EC.presence_of_element_located((By.XPATH, '/html/body/div[3]/div[1]/div[2]/div/button[1]')))
+                        AWSManager._safe_click(driver, final_button)
                         time.sleep(0.5)
                         print("[서버최신강제패치] [완료 단계 4/4] ✅ 최종 OK 버튼 클릭 완료")
                     except TimeoutException:
@@ -1823,31 +1818,29 @@ ChromeDriver 버전: {chromedriver_version}
             # CONTAINER GAMESERVERS 클릭
             try:
                 print("[delete_server_container] [단계 1/4] CONTAINER GAMESERVERS 탭 대기 중...")
-                # 페이지 존재 확인 (presence) 후 클릭 가능(clickable) 대기
-                wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
-                print("[delete_server_container] [단계 1/4] 탭 요소 발견, 클릭 가능 대기 중...")
-                container_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
-                container_tab.click()
-                time.sleep(1)  # 0.5초 → 1초로 증가
+                container_tab = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")))
+                print("[delete_server_container] [단계 1/4] 탭 요소 발견, 클릭...")
+                AWSManager._safe_click(driver, container_tab)
+                time.sleep(1)
                 print("[delete_server_container] [단계 1/4] ✅ CONTAINER GAMESERVERS 탭 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 1/4 실패] CONTAINER GAMESERVERS 탭을 찾을 수 없습니다. 페이지가 완전히 로드되지 않았거나 로그인이 필요할 수 있습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/ul/li[3]/a/span")
-            
+
             # Select all 버튼 클릭
             try:
                 print("[delete_server_container] [단계 2/4] Select All 버튼 클릭")
-                select_all_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
-                select_all_btn.click()
+                select_all_btn = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")))
+                AWSManager._safe_click(driver, select_all_btn)
                 time.sleep(0.5)
                 print("[delete_server_container] [단계 2/4] ✅ Select All 버튼 클릭 완료")
             except TimeoutException as e:
                 raise Exception(f"[단계 2/4 실패] Select All 버튼을 찾을 수 없습니다. XPath: /html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[1]")
-            
+
             # Delete Servers 버튼 클릭
             try:
                 print("[delete_server_container] [단계 3/4] Delete Servers 버튼 클릭")
-                delete_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[4]")))
-                delete_btn.click()
+                delete_btn = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div[2]/div/div/div/div/div[1]/form/div/button[4]")))
+                AWSManager._safe_click(driver, delete_btn)
                 time.sleep(0.5)
                 print("[delete_server_container] [단계 3/4] ✅ Delete Servers 버튼 클릭 완료")
             except TimeoutException as e:
@@ -1856,8 +1849,8 @@ ChromeDriver 버전: {chromedriver_version}
             # YES 버튼 클릭
             try:
                 print("[delete_server_container] [단계 4/4] YES 버튼 클릭")
-                yes_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/div[1]/div[2]/div/button[1]")))
-                yes_btn.click()
+                yes_btn = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/div[1]/div[2]/div/button[1]")))
+                AWSManager._safe_click(driver, yes_btn)
                 time.sleep(0.5)
                 print("[delete_server_container] [단계 4/4] ✅ YES 버튼 클릭 완료")
             except TimeoutException as e:
@@ -1907,8 +1900,8 @@ ChromeDriver 버전: {chromedriver_version}
             print(f"[빌드굽기] [단계 1/9] RUN 버튼 클릭 (브랜치: {branch})")
             for attempt in range(3):
                 try:
-                    button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button')))
-                    button.click()
+                    button = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="main-content-tag"]/div[4]/div/div[1]/div[1]/div/div[1]/div/button')))
+                    AWSManager._safe_click(driver, button)
                     run_button_clicked = True
                     print(f"[빌드굽기] [단계 1/9] ✅ RUN 버튼 클릭 완료 (시도 {attempt + 1}/3)")
                     break
@@ -1928,38 +1921,34 @@ ChromeDriver 버전: {chromedriver_version}
             # 탭 네비게이션
             try:
                 print("[빌드굽기] [단계 2/9] 탭 0 클릭")
-                tab0 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-0"]/p/a')))
-                tab0.click()
+                tab0 = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="tab-0"]/p/a')))
+                AWSManager._safe_click(driver, tab0)
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 2/9] ✅ 탭 0 클릭 완료")
             except TimeoutException:
                 raise Exception(f"[단계 2/9 실패] 탭 0을 찾을 수 없습니다. XPath: //*[@id=\"tab-0\"]/p/a")
-            
+
             try:
                 print("[빌드굽기] [단계 3/9] moveToTop 클릭")
-                # time.sleep(0.5)
-                # move_top = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[2]/div[4]/div[1]/div/div[5]/form[2]/div/div[2]/div[1]/div[2]/div[1]/table/tbody/tr[4]/td/span/input[1]')))
-                # move_top.click()
-                
-                driver.find_element(By.XPATH,'//*[@id="moveToTop"]').click()
+                AWSManager._safe_click(driver, driver.find_element(By.XPATH, '//*[@id="moveToTop"]'))
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 3/9] ✅ moveToTop 클릭 완료")
             except TimeoutException:
                 raise Exception(f"[단계 3/9 실패] moveToTop 버튼을 찾을 수 없습니다. XPath: //*[@id=\"moveToTop\"]")
-            
+
             try:
                 print("[빌드굽기] [단계 4/9] 탭 2 클릭")
-                tab2 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-2"]/p/a')))
-                tab2.click()
+                tab2 = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="tab-2"]/p/a')))
+                AWSManager._safe_click(driver, tab2)
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 4/9] ✅ 탭 2 클릭 완료")
             except TimeoutException:
                 raise Exception(f"[단계 4/9 실패] 탭 2를 찾을 수 없습니다. XPath: //*[@id=\"tab-2\"]/p/a")
-            
+
             try:
                 print("[빌드굽기] [단계 5/9] 브랜치 선택기 열기")
-                branch_selector = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="runBranchSelector_container"]/span/button/span[2]')))
-                branch_selector.click()
+                branch_selector = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="runBranchSelector_container"]/span/button/span[2]')))
+                AWSManager._safe_click(driver, branch_selector)
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 5/9] ✅ 브랜치 선택기 열기 완료")
             except TimeoutException:
@@ -1972,8 +1961,8 @@ ChromeDriver 버전: {chromedriver_version}
                 input_box.send_keys(branch)
                 time.sleep(1)
                 
-                branch_option = wait.until(EC.element_to_be_clickable((By.XPATH, f'//span[@class="ring-list-label" and @title="{branch}"]')))
-                branch_option.click()
+                branch_option = wait.until(EC.presence_of_element_located((By.XPATH, f'//span[@class="ring-list-label" and @title="{branch}"]')))
+                AWSManager._safe_click(driver, branch_option)
                 print(f"[빌드굽기] [단계 6/9] ✅ 브랜치 '{branch}' 선택 완료")
             except TimeoutException:
                 raise Exception(f"[단계 6/9 실패] 브랜치 '{branch}'를 찾을 수 없습니다. 브랜치명이 정확한지 확인하세요.")
@@ -1981,8 +1970,8 @@ ChromeDriver 버전: {chromedriver_version}
             try:
                 time.sleep(3)
                 print("[빌드굽기] [단계 7/9] 탭 3 클릭")
-                tab3 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tab-3"]/p/a')))
-                tab3.click()
+                tab3 = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="tab-3"]/p/a')))
+                AWSManager._safe_click(driver, tab3)
                 time.sleep(0.5)
                 print("[빌드굽기] [단계 7/9] ✅ 탭 3 클릭 완료")
             except TimeoutException:
@@ -1993,12 +1982,10 @@ ChromeDriver 버전: {chromedriver_version}
                 print("[빌드굽기] [단계 8/9] 빌드 옵션 설정")
                 # option1 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]')))
                 # option1.click()
-                driver.find_element(By.XPATH,'//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]').click()
+                AWSManager._safe_click(driver, driver.find_element(By.XPATH, '//*[@id="mcb_custom_control_parameter_build_creation_cfg_8054699_container_3"]'))
                 time.sleep(0.3)
-                
-                # option2 = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="parameter_build_docker_2083990112"]')))
-                # option2.click()
-                driver.find_element(By.XPATH,'//*[@id="parameter_build_docker_2083990112"]').click()
+
+                AWSManager._safe_click(driver, driver.find_element(By.XPATH, '//*[@id="parameter_build_docker_2083990112"]'))
                 time.sleep(0.5)
                 
                 # docker_option = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="parameter_build_docker_2083990112"]')))
@@ -2011,8 +1998,8 @@ ChromeDriver 버전: {chromedriver_version}
             if not is_debug:
                 try:
                     print("[빌드굽기] [단계 9/9] 최종 Run 버튼 클릭")
-                    run_custom_build = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="runCustomBuildButton"]')))
-                    run_custom_build.click()
+                    run_custom_build = wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="runCustomBuildButton"]')))
+                    AWSManager._safe_click(driver, run_custom_build)
                     print("[빌드굽기] [단계 9/9] ✅ 최종 Run 버튼 클릭 완료")
                 except TimeoutException:
                     raise Exception(f"[단계 9/9 실패] 최종 Run 버튼을 찾을 수 없습니다. XPath: //*[@id=\"runCustomBuildButton\"]")
